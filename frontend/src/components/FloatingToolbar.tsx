@@ -1,85 +1,171 @@
-import { useEditor } from 'tldraw'; // <-- Modificato l'import da '@tldraw/editor' a 'tldraw'
-import { useState, useEffect } from 'react';
-import { MousePointer2, Hand, Square, Diamond, MoveRight, Pen, Type, Eraser } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  Circle,
+  Diamond,
+  Eraser,
+  GitBranch,
+  Hand,
+  MousePointer2,
+  MoveRight,
+  Pen,
+  Square,
+  Type,
+  type LucideIcon,
+} from 'lucide-react';
+import {
+  GeoShapeGeoStyle,
+  useEditor,
+  type TLGeoShapeGeoStyle,
+} from 'tldraw';
+import { createBranchFromSelection } from '../lib/tldraw/createBranch';
 
-export function FloatingToolbar() {
-  const editor = useEditor(); // Otteniamo il controllo totale del motore della lavagna
-  const [activeTool, setActiveTool] = useState('select');
+type ToolId =
+  | 'select'
+  | 'pan'
+  | 'rectangle'
+  | 'circle'
+  | 'diamond'
+  | 'arrow'
+  | 'draw'
+  | 'text'
+  | 'eraser';
 
-  // Ascolta i cambiamenti di strumento interni alla lavagna (es. se l'utente usa scorciatoie da tastiera)
-  useEffect(() => {
-    const updateActiveTool = () => {
-      const currentTool = editor.getCurrentToolId();
-      
-      // Mappatura inversa per mantenere sincrona l'interfaccia di Figma
-      if (currentTool === 'hand') {
-        setActiveTool('pan');
-      } else if (currentTool === 'geo') {
-        // Se tldraw usa il tool geometrico generico, controlliamo se è impostato su diamond
-        const style = editor.getSharedStyles().get('geo');
-        setActiveTool(style === 'diamond' ? 'diamond' : 'rectangle');
-      } else {
-        setActiveTool(currentTool);
-      }
+type ToolbarEntry =
+  | {
+      kind: 'tool';
+      id: ToolId;
+      icon: LucideIcon;
+      label: string;
+    }
+  | {
+      kind: 'action';
+      id: 'branch';
+      icon: LucideIcon;
+      label: string;
     };
 
-    // Registra l'ascoltatore sullo store di tldraw
-    editor.store.listen(updateActiveTool, { scope: 'document', source: 'user' });
+const TOOLBAR_ENTRIES: ToolbarEntry[] = [
+  { kind: 'tool', id: 'select', icon: MousePointer2, label: 'Select' },
+  { kind: 'tool', id: 'pan', icon: Hand, label: 'Pan' },
+  { kind: 'tool', id: 'rectangle', icon: Square, label: 'Rectangle' },
+  { kind: 'tool', id: 'circle', icon: Circle, label: 'Circle' },
+  { kind: 'tool', id: 'diamond', icon: Diamond, label: 'Diamond' },
+  { kind: 'tool', id: 'arrow', icon: MoveRight, label: 'Arrow' },
+  { kind: 'tool', id: 'draw', icon: Pen, label: 'Draw' },
+  { kind: 'tool', id: 'text', icon: Type, label: 'Text' },
+  { kind: 'tool', id: 'eraser', icon: Eraser, label: 'Eraser' },
+  { kind: 'action', id: 'branch', icon: GitBranch, label: 'Branch / Fork' },
+];
+
+const GEO_TOOL_MAP: Partial<Record<ToolId, TLGeoShapeGeoStyle>> = {
+  rectangle: 'rectangle',
+  circle: 'ellipse',
+  diamond: 'diamond',
+};
+
+function geoToToolId(geo: TLGeoShapeGeoStyle): ToolId | null {
+  if (geo === 'rectangle') return 'rectangle';
+  if (geo === 'ellipse') return 'circle';
+  if (geo === 'diamond') return 'diamond';
+  return null;
+}
+
+export function FloatingToolbar() {
+  const editor = useEditor();
+  const [activeTool, setActiveTool] = useState<ToolId | 'branch'>('select');
+
+  const syncFromEditor = useCallback(() => {
+    const currentTool = editor.getCurrentToolId();
+
+    if (currentTool === 'hand') {
+      setActiveTool('pan');
+      return;
+    }
+
+    if (currentTool === 'geo') {
+      const geo = editor.getStyleForNextShape(GeoShapeGeoStyle);
+      const mapped = geoToToolId(geo);
+      if (mapped) {
+        setActiveTool(mapped);
+      }
+      return;
+    }
+
+    if (
+      currentTool === 'select' ||
+      currentTool === 'arrow' ||
+      currentTool === 'draw' ||
+      currentTool === 'text' ||
+      currentTool === 'eraser'
+    ) {
+      setActiveTool(currentTool);
+    }
   }, [editor]);
 
-  const tools = [
-    { id: 'select', icon: MousePointer2, label: 'Select' },
-    { id: 'pan', icon: Hand, label: 'Pan' },
-    { id: 'rectangle', icon: Square, label: 'Rectangle' },
-    { id: 'diamond', icon: Diamond, label: 'Diamond' },
-    { id: 'arrow', icon: MoveRight, label: 'Arrow' },
-    { id: 'draw', icon: Pen, label: 'Draw' },
-    { id: 'text', icon: Type, label: 'Text' },
-    { id: 'eraser', icon: Eraser, label: 'Eraser' },
-  ];
+  useEffect(() => {
+    syncFromEditor();
+    const unlisten = editor.store.listen(syncFromEditor, { source: 'user' });
+    return () => unlisten();
+  }, [editor, syncFromEditor]);
 
-  const handleToolChange = (toolId: string) => {
-    // Convertiamo i tool personalizzati di Figma nei comandi reali del motore Tldraw
+  const activateGeoTool = (geo: TLGeoShapeGeoStyle, toolId: ToolId) => {
+    editor.setStyleForNextShapes(GeoShapeGeoStyle, geo);
+    editor.setCurrentTool('geo');
+    setActiveTool(toolId);
+  };
+
+  const handleToolChange = (toolId: ToolId) => {
     switch (toolId) {
       case 'pan':
         editor.setCurrentTool('hand');
         break;
       case 'rectangle':
-        editor.setCurrentTool('rectangle');
-        break;
+      case 'circle':
       case 'diamond':
-        // In tldraw il rombo fa parte dei tool geometrici complessi ('geo')
-        editor.setCurrentTool('geo');
-        editor.updatePageState({ editingShapeId: null });
-        // Impostiamo lo stile corrente su diamond prima di tracciare
-        break;
+        activateGeoTool(GEO_TOOL_MAP[toolId]!, toolId);
+        return;
       default:
-        // 'select', 'arrow', 'draw', 'text', 'eraser' corrispondono nativamente
         editor.setCurrentTool(toolId);
         break;
     }
     setActiveTool(toolId);
   };
 
+  const handleBranch = () => {
+    const created = createBranchFromSelection(editor, 3);
+    if (created) {
+      setActiveTool('select');
+    }
+  };
+
   return (
     <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
       <div className="flex items-center gap-1 px-3 py-2.5 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 shadow-2xl">
-        {tools.map((tool) => {
-          const Icon = tool.icon;
+        {TOOLBAR_ENTRIES.map((entry) => {
+          const Icon = entry.icon;
+          const isActive =
+            entry.kind === 'tool'
+              ? activeTool === entry.id
+              : false;
+
           return (
             <button
-              key={tool.id}
-              onClick={() => handleToolChange(tool.id)}
+              key={entry.id}
+              type="button"
+              onClick={() =>
+                entry.kind === 'action' ? handleBranch() : handleToolChange(entry.id)
+              }
               className={`
                 p-2.5 rounded-lg transition-all duration-200
                 hover:bg-white/10
-                ${activeTool === tool.id
-                  ? 'bg-white/20 text-white'
-                  : 'text-gray-300 hover:text-white'
+                ${
+                  isActive
+                    ? 'bg-white/20 text-white'
+                    : 'text-gray-300 hover:text-white'
                 }
               `}
-              aria-label={tool.label}
-              title={tool.label}
+              aria-label={entry.label}
+              title={entry.label}
             >
               <Icon size={20} />
             </button>
