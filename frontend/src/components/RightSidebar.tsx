@@ -8,11 +8,14 @@ import { StrokeStyleSection } from './properties/sections/StrokeStyleSection';
 import { StrokeWidthSection } from './properties/sections/StrokeWidthSection';
 import { AlignmentSection } from './properties/sections/AlignmentSection';
 
+const sidebarScrollClass =
+  'flex flex-col gap-4 w-[260px] max-w-[min(260px,26vw)] shrink-0 min-h-0 max-h-[calc(100vh-140px)] overflow-y-auto custom-scrollbar pb-6';
+
 export function RightSidebar() {
   const props = usePropertiesPanel();
 
   return (
-    <aside className="flex flex-col gap-4 w-[260px] max-w-[min(260px,26vw)] shrink-0 min-h-0 max-h-full overflow-y-auto custom-scrollbar pb-2">
+    <aside className={sidebarScrollClass}>
       <PropertyCard title="Selection Info">
         <div className="flex flex-col gap-2">
           <div className="flex justify-between items-center gap-2">
@@ -27,9 +30,8 @@ export function RightSidebar() {
       <PropertyCard title="Style">
         <div className="space-y-4">
           <ColorPickerSection
-            activeColorHex={props.activeColorHex}
+            activeColor={props.activeColor}
             onColorSelect={props.handleColorSelect}
-            onCustomColorHex={props.setActiveColorHex}
           />
           <OpacitySection value={props.opacity} onChange={props.handleOpacityChange} />
         </div>

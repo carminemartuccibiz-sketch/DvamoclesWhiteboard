@@ -16,6 +16,9 @@ function getSchemaName(shape: TLGroupShape) {
   return typeof meta.schemaName === 'string' ? meta.schemaName : null;
 }
 
+const sidebarScrollClass =
+  'flex flex-col gap-4 w-[280px] max-w-[min(280px,28vw)] shrink-0 min-h-0 max-h-[calc(100vh-140px)] overflow-y-auto custom-scrollbar pb-6';
+
 export function LeftSidebar() {
   const editor = useEditor();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,8 +70,8 @@ export function LeftSidebar() {
   };
 
   return (
-    <aside className="flex flex-col gap-4 w-[280px] max-w-[min(280px,28vw)] shrink-0 min-h-0">
-      <FloatingCard className="flex flex-col min-h-0 max-h-[min(420px,45vh)]">
+    <aside className={sidebarScrollClass}>
+      <FloatingCard className="flex flex-col shrink-0">
         <div className="px-4 py-3 border-b border-white/10 shrink-0">
           <h3 className="text-white/90 text-sm font-medium font-ui">Schemas & Groups</h3>
         </div>
@@ -95,7 +98,7 @@ export function LeftSidebar() {
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-2 min-h-0">
+        <div className="px-2 py-2 shrink-0">
           <label className={cn(chrome.sectionLabel, 'px-2')}>Outline</label>
           {outline.length === 0 ? (
             <p className="text-xs text-zinc-600 px-3 py-2 leading-relaxed">
@@ -129,7 +132,7 @@ export function LeftSidebar() {
         </div>
       </FloatingCard>
 
-      <FloatingCard>
+      <FloatingCard className="shrink-0">
         <div className="px-4 py-3 border-b border-white/10">
           <h3 className="text-white/90 text-sm font-medium font-ui">Asset Library</h3>
         </div>

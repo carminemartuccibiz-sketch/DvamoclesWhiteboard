@@ -4,23 +4,16 @@ import {
   Circle,
   Diamond,
   Eraser,
-  GitBranch,
   Hand,
+  Minus,
   MousePointer2,
   MoveRight,
   Pen,
-  Square,
-  StickyNote,
-  Type,
   ScrollText,
+  Square,
+  Type,
 } from 'lucide-react';
-import {
-  DefaultColorStyle,
-  GeoShapeGeoStyle,
-  useEditor,
-  type TLGeoShapeGeoStyle,
-} from 'tldraw';
-import { createBranchFromSelection } from '../lib/tldraw/createBranch';
+import { GeoShapeGeoStyle, useEditor, type TLGeoShapeGeoStyle } from 'tldraw';
 import { createLinedPaper } from '../lib/tldraw/createLinedPaper';
 
 export type ToolId =
@@ -31,11 +24,11 @@ export type ToolId =
   | 'diamond'
   | 'arrow'
   | 'draw'
+  | 'line'
   | 'text'
-  | 'eraser'
-  | 'note';
+  | 'eraser';
 
-export type ToolbarActionId = 'branch' | 'linedPaper';
+export type ToolbarActionId = 'linedPaper';
 
 export type ToolbarEntry =
   | {
@@ -51,7 +44,7 @@ export type ToolbarEntry =
       id: ToolbarActionId;
       icon: LucideIcon;
       label: string;
-      shortcut: string;
+      shortcut?: string;
     };
 
 export const TOOLBAR_ENTRIES: ToolbarEntry[] = [
@@ -62,11 +55,10 @@ export const TOOLBAR_ENTRIES: ToolbarEntry[] = [
   { kind: 'tool', id: 'circle', icon: Circle, label: 'Ellipse', shortcut: 'O', digit: '5' },
   { kind: 'tool', id: 'arrow', icon: MoveRight, label: 'Arrow', shortcut: 'A', digit: '6' },
   { kind: 'tool', id: 'draw', icon: Pen, label: 'Draw', shortcut: 'P', digit: '7' },
-  { kind: 'tool', id: 'text', icon: Type, label: 'Text', shortcut: 'T', digit: '8' },
-  { kind: 'tool', id: 'eraser', icon: Eraser, label: 'Eraser', shortcut: 'E', digit: '9' },
-  { kind: 'tool', id: 'note', icon: StickyNote, label: 'Sticky Note', shortcut: 'N' },
-  { kind: 'action', id: 'linedPaper', icon: ScrollText, label: 'Lined Paper', shortcut: 'L' },
-  { kind: 'action', id: 'branch', icon: GitBranch, label: 'Branch', shortcut: 'B' },
+  { kind: 'tool', id: 'line', icon: Minus, label: 'Line', shortcut: 'L', digit: '8' },
+  { kind: 'tool', id: 'text', icon: Type, label: 'Text', shortcut: 'T', digit: '9' },
+  { kind: 'tool', id: 'eraser', icon: Eraser, label: 'Eraser', shortcut: 'E' },
+  { kind: 'action', id: 'linedPaper', icon: ScrollText, label: 'Lined Paper' },
 ];
 
 const GEO_TOOL_MAP: Partial<Record<ToolId, TLGeoShapeGeoStyle>> = {
@@ -90,13 +82,11 @@ const SHORTCUT_BY_KEY: Record<string, ToolId | ToolbarActionId> = {
   '6': 'arrow',
   p: 'draw',
   '7': 'draw',
+  l: 'line',
+  '8': 'line',
   t: 'text',
-  '8': 'text',
+  '9': 'text',
   e: 'eraser',
-  '9': 'eraser',
-  n: 'note',
-  l: 'linedPaper',
-  b: 'branch',
 };
 
 function geoToToolId(geo: TLGeoShapeGeoStyle): ToolId | null {
@@ -131,9 +121,9 @@ export function useToolbarTools() {
       currentTool === 'select' ||
       currentTool === 'arrow' ||
       currentTool === 'draw' ||
+      currentTool === 'line' ||
       currentTool === 'text' ||
-      currentTool === 'eraser' ||
-      currentTool === 'note'
+      currentTool === 'eraser'
     ) {
       setActiveTool(currentTool);
     }
@@ -156,19 +146,9 @@ export function useToolbarTools() {
 
   const activateTool = useCallback(
     (toolId: ToolId | ToolbarActionId) => {
-      if (toolId === 'branch') {
-        if (createBranchFromSelection(editor, 3)) setActiveTool('select');
-        return;
-      }
       if (toolId === 'linedPaper') {
         createLinedPaper(editor);
         setActiveTool('select');
-        return;
-      }
-      if (toolId === 'note') {
-        editor.setStyleForNextShapes(DefaultColorStyle, 'yellow');
-        editor.setCurrentTool('note');
-        setActiveTool('note');
         return;
       }
       switch (toolId) {

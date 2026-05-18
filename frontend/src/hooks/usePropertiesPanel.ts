@@ -13,7 +13,6 @@ import {
 } from 'tldraw';
 import { applyStyle } from '../lib/tldraw/applyStyle';
 import { applySketchyStyle, applyStraightStroke } from '../lib/tldraw/applySketchyStyle';
-import { UI_HEX_BY_TLDRAW_COLOR } from '../components/properties/sections/ColorPickerSection';
 import type { FillUiStyle } from '../components/properties/sections/FillStyleSection';
 import type { SloppinessUi } from '../components/properties/sections/SloppinessSection';
 import type { StrokeUiStyle } from '../components/properties/sections/StrokeStyleSection';
@@ -33,7 +32,7 @@ function isSketchySloppiness(
 export function usePropertiesPanel() {
   const editor = useEditor();
   const [objectIdLabel, setObjectIdLabel] = useState('No Selection');
-  const [activeColorHex, setActiveColorHex] = useState('#000000');
+  const [activeColor, setActiveColor] = useState<TLDefaultColorStyle>('black');
   const [fillStyle, setFillStyle] = useState<FillUiStyle>('none');
   const [sloppiness, setSloppiness] = useState<SloppinessUi>('straight');
   const [strokeStyle, setStrokeStyle] = useState<StrokeUiStyle>('solid');
@@ -53,7 +52,7 @@ export function usePropertiesPanel() {
 
     const colorStyle = editor.getSharedStyles().get(DefaultColorStyle);
     if (colorStyle?.type === 'shared') {
-      setActiveColorHex(UI_HEX_BY_TLDRAW_COLOR[colorStyle.value] ?? '#000000');
+      setActiveColor(colorStyle.value);
     }
 
     const fill = editor.getSharedStyles().get(DefaultFillStyle);
@@ -101,7 +100,7 @@ export function usePropertiesPanel() {
 
   const handleColorSelect = (tldrawColor: TLDefaultColorStyle) => {
     applyStyle(editor, DefaultColorStyle, tldrawColor);
-    setActiveColorHex(UI_HEX_BY_TLDRAW_COLOR[tldrawColor]);
+    setActiveColor(tldrawColor);
   };
 
   const handleFillChange = (value: TLDefaultFillStyle) => {
@@ -144,7 +143,7 @@ export function usePropertiesPanel() {
 
   return {
     objectIdLabel,
-    activeColorHex,
+    activeColor,
     fillStyle,
     sloppiness,
     strokeStyle,
@@ -156,6 +155,5 @@ export function usePropertiesPanel() {
     handleStrokeStyleChange,
     handleStrokeWidthChange,
     handleOpacityChange,
-    setActiveColorHex,
   };
 }

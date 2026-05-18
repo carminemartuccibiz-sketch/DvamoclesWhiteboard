@@ -38,7 +38,7 @@ export function BottomToolbar() {
                 : 'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10',
               isAction && index > 0 && 'ml-0.5',
             )}
-            aria-label={`${entry.label} (${shortcut})`}
+            aria-label={shortcut ? `${entry.label} (${shortcut})` : entry.label}
           >
             <Icon className="w-5 h-5" strokeWidth={isActive ? 2.25 : 2} />
 
@@ -53,9 +53,11 @@ export function BottomToolbar() {
             >
               <div className="flex items-center gap-2">
                 <span className="text-white text-xs font-ui">{entry.label}</span>
-                <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/70 text-xs font-mono">
-                  {shortcut}
-                </kbd>
+                {shortcut ? (
+                  <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/70 text-xs font-mono">
+                    {shortcut}
+                  </kbd>
+                ) : null}
                 {digit ? (
                   <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50 text-xs font-mono">
                     {digit}
