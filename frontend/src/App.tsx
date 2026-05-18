@@ -2,13 +2,8 @@ import { useState } from 'react';
 import { Tldraw } from 'tldraw';
 import 'tldraw/tldraw.css';
 
-import { FloatingToolbar } from './components/FloatingToolbar';
-import { TopLeftMenu } from './components/TopLeftMenu';
-import { TopRightStatus } from './components/TopRightStatus';
-import { ProjectNavigation } from './components/ProjectNavigation';
-import { PropertiesPanel } from './components/PropertiesPanel';
-import { ImportAssets } from './components/ImportAssets';
-import { SettingsModal } from './components/SettingsModal';
+import { DvamoclesOverlay } from './components/DvamoclesOverlay';
+import { CanvasMinimap } from './components/ui/CanvasMinimap';
 
 export default function App() {
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -41,28 +36,14 @@ export default function App() {
           colorScheme={isDarkMode ? 'dark' : 'light'}
           className="absolute inset-0 z-0"
         >
-          <div className="absolute inset-0 z-10 pointer-events-none">
-            <header className="pointer-events-auto">
-              <TopLeftMenu onOpenSettings={() => setSettingsOpen(true)} />
-              <TopRightStatus
-                isDarkMode={isDarkMode}
-                onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
-              />
-            </header>
-
-            <aside className="fixed left-5 top-[7rem] z-40 w-[19.5rem] max-h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar space-y-3 pointer-events-auto pr-1 dv-stagger">
-              <ProjectNavigation />
-              <PropertiesPanel />
-              <ImportAssets />
-            </aside>
-
-            <footer className="pointer-events-auto">
-              <FloatingToolbar />
-            </footer>
-
-            <div className="pointer-events-auto">
-              <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
-            </div>
+          <DvamoclesOverlay
+            isDarkMode={isDarkMode}
+            onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
+            settingsOpen={settingsOpen}
+            onSettingsOpenChange={setSettingsOpen}
+          />
+          <div className="absolute bottom-5 right-5 z-20 pointer-events-none max-sm:hidden">
+            <CanvasMinimap />
           </div>
         </Tldraw>
       </div>

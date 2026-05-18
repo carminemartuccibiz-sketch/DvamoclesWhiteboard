@@ -1,1 +1,1 @@
-export { PropertiesPanel } from './properties/PropertiesPanel';
+export { PropertiesPanel, RightSidebar } from './RightSidebar';

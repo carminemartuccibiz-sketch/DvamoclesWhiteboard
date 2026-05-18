@@ -1,0 +1,54 @@
+import { FileImage, FileCode2 } from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
+import { useEditor } from 'tldraw';
+import { exportDocumentAsPng, exportDocumentAsSvg } from '../lib/tldraw/exportDocument';
+import { chrome } from './ui/chrome';
+
+interface ExportMenuItemsProps {
+  documentTitle: string;
+  isDarkMode?: boolean;
+}
+
+export function ExportMenuItems({ documentTitle, isDarkMode }: ExportMenuItemsProps) {
+  const editor = useEditor();
+
+  const runExport = (fn: () => Promise<void>) => {
+    void fn().catch(() => {
+      /* export failed */
+    });
+  };
+
+  return (
+    <DropdownMenu.Sub>
+      <DropdownMenu.SubTrigger className={chrome.dropdownItem}>
+        <FileImage size={16} className="text-zinc-500" />
+        Export
+        <span className="ml-auto text-zinc-600 text-xs">›</span>
+      </DropdownMenu.SubTrigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.SubContent className={chrome.dropdown} sideOffset={4} alignOffset={-4}>
+          <DropdownMenu.Item
+            className={chrome.dropdownItem}
+            onSelect={(e) => {
+              e.preventDefault();
+              runExport(() => exportDocumentAsPng(editor, documentTitle, isDarkMode));
+            }}
+          >
+            <FileImage size={16} className="text-zinc-500" />
+            Export as PNG
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            className={chrome.dropdownItem}
+            onSelect={(e) => {
+              e.preventDefault();
+              runExport(() => exportDocumentAsSvg(editor, documentTitle, isDarkMode));
+            }}
+          >
+            <FileCode2 size={16} className="text-zinc-500" />
+            Export as SVG
+          </DropdownMenu.Item>
+        </DropdownMenu.SubContent>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Sub>
+  );
+}
