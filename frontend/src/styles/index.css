@@ -2,4 +2,63 @@
 @import './tailwind.css';
 @import './theme.css';
 
-.tl-watermark_logo { display: none !important; }
+.tl-watermark_logo {
+  display: none !important;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    letter-spacing: -0.011em;
+  }
+
+  #root {
+    font-family: var(--font-sans);
+  }
+}
+
+@layer utilities {
+  .font-ui {
+    font-family: var(--font-sans);
+  }
+
+  .dv-glass {
+    @apply bg-zinc-950/70 backdrop-blur-2xl border border-white/[0.08] ring-1 ring-inset ring-white/[0.04];
+  }
+
+  .dv-animate-in {
+    animation: dv-fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .dv-stagger > * {
+    animation: dv-fade-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .dv-stagger > *:nth-child(1) {
+    animation-delay: 0ms;
+  }
+  .dv-stagger > *:nth-child(2) {
+    animation-delay: 45ms;
+  }
+  .dv-stagger > *:nth-child(3) {
+    animation-delay: 90ms;
+  }
+}
+
+@keyframes dv-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

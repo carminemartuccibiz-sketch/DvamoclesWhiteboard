@@ -3,6 +3,7 @@ import {
   DefaultColorStyle,
   DefaultDashStyle,
   DefaultFillStyle,
+  DefaultFontStyle,
   DefaultSizeStyle,
   useEditor,
   type TLDefaultColorStyle,
@@ -11,6 +12,8 @@ import {
   type TLDefaultSizeStyle,
 } from 'tldraw';
 import { applyStyle } from '../../lib/tldraw/applyStyle';
+import { applySketchyStyle, applyStraightStroke } from '../../lib/tldraw/applySketchyStyle';
+import { ChromePanel } from '../ui/chrome';
 import { ColorPickerSection, UI_HEX_BY_TLDRAW_COLOR } from './sections/ColorPickerSection';
 import { FillStyleSection, type FillUiStyle } from './sections/FillStyleSection';
 import { ObjectIdSection } from './sections/ObjectIdSection';
@@ -21,6 +24,14 @@ import { StrokeWidthSection, type SizeUi } from './sections/StrokeWidthSection';
 
 function stripShapePrefix(id: string) {
   return id.replace(/^shape:/, '');
+}
+
+function isSketchyPreset(
+  dash: TLDefaultDashStyle | undefined,
+  fill: TLDefaultFillStyle | undefined,
+  font: string | undefined,
+): boolean {
+  return dash === 'draw' && fill === 'pattern' && font === 'draw';
 }
 
 export function PropertiesPanel() {
@@ -50,8 +61,18 @@ export function PropertiesPanel() {
     }
 
     const fill = editor.getSharedStyles().get(DefaultFillStyle);
-    if (fill?.type === 'shared') {
-      const fillValue = fill.value;
+    const dash = editor.getSharedStyles().get(DefaultDashStyle);
+    const font = editor.getSharedStyles().get(DefaultFontStyle);
+
+    const fillValue = fill?.type === 'shared' ? fill.value : undefined;
+    const dashValue = dash?.type === 'shared' ? dash.value : undefined;
+    const fontValue = font?.type === 'shared' ? font.value : undefined;
+
+    if (isSketchyPreset(dashValue, fillValue, fontValue)) {
+      setSloppiness('sketchy');
+      setFillStyle('pattern');
+    } else {
+      setSloppiness('straight');
       if (
         fillValue === 'none' ||
         fillValue === 'semi' ||
@@ -60,17 +81,8 @@ export function PropertiesPanel() {
       ) {
         setFillStyle(fillValue);
       }
-    }
-
-    const dash = editor.getSharedStyles().get(DefaultDashStyle);
-    if (dash?.type === 'shared') {
-      if (dash.value === 'draw') {
-        setSloppiness('sketchy');
-      } else {
-        setSloppiness('straight');
-        if (dash.value === 'solid' || dash.value === 'dashed' || dash.value === 'dotted') {
-          setStrokeStyle(dash.value);
-        }
+      if (dashValue === 'solid' || dashValue === 'dashed' || dashValue === 'dotted') {
+        setStrokeStyle(dashValue);
       }
     }
 
@@ -97,6 +109,7 @@ export function PropertiesPanel() {
   };
 
   const handleFillChange = (value: TLDefaultFillStyle) => {
+    if (sloppiness === 'sketchy') return;
     setFillStyle(value);
     applyStyle(editor, DefaultFillStyle, value);
   };
@@ -104,16 +117,17 @@ export function PropertiesPanel() {
   const handleSloppinessChange = (value: SloppinessUi) => {
     setSloppiness(value);
     if (value === 'sketchy') {
-      applyStyle(editor, DefaultDashStyle, 'draw');
+      setFillStyle('pattern');
+      applySketchyStyle(editor);
       return;
     }
-    applyStyle(editor, DefaultDashStyle, strokeStyle);
+    applyStraightStroke(editor, strokeStyle);
   };
 
   const handleStrokeStyleChange = (value: TLDefaultDashStyle) => {
     setStrokeStyle(value as StrokeUiStyle);
     if (sloppiness === 'straight') {
-      applyStyle(editor, DefaultDashStyle, value);
+      applyStraightStroke(editor, value as StrokeUiStyle);
     }
   };
 
@@ -133,34 +147,28 @@ export function PropertiesPanel() {
   };
 
   return (
-    <div className="bg-[#1e1e1e] border border-white/10 rounded-xl p-5 shadow-2xl">
-      <h3 className="text-sm font-semibold text-white mb-4 font-mono tracking-wide">
-        ELEMENT PROPERTIES
-      </h3>
-
+    <ChromePanel title="Element Properties">
       <div className="space-y-5">
         <ObjectIdSection label={objectIdLabel} />
-
         <ColorPickerSection
           activeColorHex={activeColorHex}
           onColorSelect={handleColorSelect}
           onCustomColorHex={setActiveColorHex}
         />
-
-        <FillStyleSection value={fillStyle} onChange={handleFillChange} />
-
+        <FillStyleSection
+          value={fillStyle}
+          disabled={sloppiness === 'sketchy'}
+          onChange={handleFillChange}
+        />
         <SloppinessSection value={sloppiness} onChange={handleSloppinessChange} />
-
         <StrokeStyleSection
           value={strokeStyle}
           disabled={sloppiness === 'sketchy'}
           onChange={handleStrokeStyleChange}
         />
-
         <StrokeWidthSection value={strokeWidth} onChange={handleStrokeWidthChange} />
-
         <OpacitySection value={opacity} onChange={handleOpacityChange} />
       </div>
-    </div>
+    </ChromePanel>
   );
 }

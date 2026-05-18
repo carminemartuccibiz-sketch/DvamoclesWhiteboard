@@ -18,6 +18,8 @@ import {
   type TLGeoShapeGeoStyle,
 } from 'tldraw';
 import { createBranchFromSelection } from '../lib/tldraw/createBranch';
+import { chrome } from './ui/chrome';
+import { cn } from './ui/utils';
 
 type ToolId =
   | 'select'
@@ -31,18 +33,8 @@ type ToolId =
   | 'eraser';
 
 type ToolbarEntry =
-  | {
-      kind: 'tool';
-      id: ToolId;
-      icon: LucideIcon;
-      label: string;
-    }
-  | {
-      kind: 'action';
-      id: 'branch';
-      icon: LucideIcon;
-      label: string;
-    };
+  | { kind: 'tool'; id: ToolId; icon: LucideIcon; label: string }
+  | { kind: 'action'; id: 'branch'; icon: LucideIcon; label: string };
 
 const TOOLBAR_ENTRIES: ToolbarEntry[] = [
   { kind: 'tool', id: 'select', icon: MousePointer2, label: 'Select' },
@@ -83,11 +75,8 @@ export function FloatingToolbar() {
     }
 
     if (currentTool === 'geo') {
-      const geo = editor.getStyleForNextShape(GeoShapeGeoStyle);
-      const mapped = geoToToolId(geo);
-      if (mapped) {
-        setActiveTool(mapped);
-      }
+      const mapped = geoToToolId(editor.getStyleForNextShape(GeoShapeGeoStyle));
+      if (mapped) setActiveTool(mapped);
       return;
     }
 
@@ -126,27 +115,23 @@ export function FloatingToolbar() {
         return;
       default:
         editor.setCurrentTool(toolId);
-        break;
     }
     setActiveTool(toolId);
   };
 
   const handleBranch = () => {
-    const created = createBranchFromSelection(editor, 3);
-    if (created) {
+    if (createBranchFromSelection(editor, 3)) {
       setActiveTool('select');
     }
   };
 
   return (
-    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
-      <div className="flex items-center gap-1 px-3 py-2.5 rounded-full bg-black/40 backdrop-blur-xl border border-white/10 shadow-2xl">
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+      <div className={cn(chrome.floatingBar, 'flex items-center gap-0.5 px-2 py-2')}>
         {TOOLBAR_ENTRIES.map((entry) => {
           const Icon = entry.icon;
-          const isActive =
-            entry.kind === 'tool'
-              ? activeTool === entry.id
-              : false;
+          const isActive = entry.kind === 'tool' && activeTool === entry.id;
+          const isAction = entry.kind === 'action';
 
           return (
             <button
@@ -155,19 +140,17 @@ export function FloatingToolbar() {
               onClick={() =>
                 entry.kind === 'action' ? handleBranch() : handleToolChange(entry.id)
               }
-              className={`
-                p-2.5 rounded-lg transition-all duration-200
-                hover:bg-white/10
-                ${
-                  isActive
-                    ? 'bg-white/20 text-white'
-                    : 'text-gray-300 hover:text-white'
-                }
-              `}
+              className={cn(
+                'p-2.5 rounded-xl transition-all duration-200',
+                isActive
+                  ? 'bg-white/[0.14] text-white shadow-inner ring-1 ring-white/[0.1]'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]',
+                isAction && 'ml-1 border-l border-white/[0.08] pl-3 rounded-l-none hover:text-blue-300',
+              )}
               aria-label={entry.label}
               title={entry.label}
             >
-              <Icon size={20} />
+              <Icon size={19} strokeWidth={isActive ? 2.25 : 2} />
             </button>
           );
         })}

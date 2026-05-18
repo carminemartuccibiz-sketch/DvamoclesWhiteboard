@@ -1,6 +1,8 @@
 import { MapPin, Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { createShapeId, useEditor, type TLGroupShape, type TLShapeId } from 'tldraw';
+import { ChromePanel, chrome } from './ui/chrome';
+import { cn } from './ui/utils';
 
 interface SchemaOutlineItem {
   id: TLShapeId;
@@ -16,17 +18,15 @@ export function ProjectNavigation() {
   const editor = useEditor();
   const [schemaName, setSchemaName] = useState('');
   const [outline, setOutline] = useState<SchemaOutlineItem[]>([]);
+  const [activeId, setActiveId] = useState<TLShapeId | null>(null);
 
   const refreshOutline = useCallback(() => {
-    const groups = editor
+    const items = editor
       .getCurrentPageShapes()
-      .filter((shape): shape is TLGroupShape => shape.type === 'group');
-
-    const items = groups
+      .filter((shape): shape is TLGroupShape => shape.type === 'group')
       .map((group) => {
         const name = getSchemaName(group);
-        if (!name) return null;
-        return { id: group.id, name };
+        return name ? { id: group.id, name } : null;
       })
       .filter((item): item is SchemaOutlineItem => item !== null);
 
@@ -48,35 +48,22 @@ export function ProjectNavigation() {
 
     const groupId = createShapeId();
     editor.groupShapes(selectedIds, { groupId, select: true });
-
-    editor.updateShapes([
-      {
-        id: groupId,
-        type: 'group',
-        meta: { schemaName: trimmed },
-      },
-    ]);
-
+    editor.updateShapes([{ id: groupId, type: 'group', meta: { schemaName: trimmed } }]);
     setSchemaName('');
     refreshOutline();
   };
 
   const handleOutlineSelect = (id: TLShapeId) => {
+    setActiveId(id);
     editor.select(id);
     editor.zoomToSelection({ animation: { duration: 280 } });
   };
 
   return (
-    <div className="bg-[#1e1e1e] border border-white/10 rounded-xl p-5 shadow-2xl">
-      <h3 className="text-sm font-semibold text-white mb-4 font-mono tracking-wide">
-        PROJECT NAVIGATION
-      </h3>
-
-      <div className="mb-5 pb-5 border-b border-white/10">
-        <label className="text-xs text-gray-400 mb-3 block font-medium">
-          ELEMENT NAMING TOOLS
-        </label>
-        <div className="space-y-2">
+    <ChromePanel title="Project Navigation">
+      <div className="mb-5 pb-5 border-b border-white/[0.06]">
+        <label className={chrome.sectionLabel}>Element Naming</label>
+        <div className="space-y-2.5">
           <input
             type="text"
             value={schemaName}
@@ -84,13 +71,13 @@ export function ProjectNavigation() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleNameSelection();
             }}
-            placeholder="Enter schema name..."
-            className="w-full px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder:text-gray-500 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/50"
+            placeholder="Schema name…"
+            className={chrome.input}
           />
           <button
             type="button"
             onClick={handleNameSelection}
-            className="w-full px-4 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-400 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-2"
+            className={`w-full ${chrome.primaryBtn} flex items-center justify-center gap-2`}
           >
             <Plus size={16} />
             Name Selection
@@ -99,25 +86,37 @@ export function ProjectNavigation() {
       </div>
 
       <div>
-        <label className="text-xs text-gray-400 mb-3 block font-medium">OUTLINE</label>
-        <div className="space-y-1 max-h-[240px] overflow-y-auto custom-scrollbar">
+        <label className={chrome.sectionLabel}>Outline</label>
+        <div className="space-y-0.5 max-h-[220px] overflow-y-auto custom-scrollbar pr-0.5">
           {outline.length === 0 ? (
-            <p className="text-xs text-gray-500 px-3 py-2">No named schemas yet.</p>
+            <p className="text-xs text-zinc-600 px-2 py-3 leading-relaxed">
+              Select 2+ shapes, name them, and they appear here.
+            </p>
           ) : (
             outline.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => handleOutlineSelect(item.id)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-300 hover:bg-white/5 hover:text-white transition-all duration-200 group"
+                className={cn(
+                  chrome.outlineItem,
+                  activeId === item.id && 'bg-white/[0.08] text-white ring-1 ring-white/[0.06]',
+                )}
               >
-                <MapPin size={16} className="text-blue-400 flex-shrink-0" />
+                <MapPin
+                  size={15}
+                  className={
+                    activeId === item.id
+                      ? 'text-blue-400'
+                      : 'text-zinc-500 group-hover:text-blue-400/80'
+                  }
+                />
                 <span className="flex-1 text-left truncate">{item.name}</span>
               </button>
             ))
           )}
         </div>
       </div>
-    </div>
+    </ChromePanel>
   );
 }

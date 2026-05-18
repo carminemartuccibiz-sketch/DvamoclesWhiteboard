@@ -31,7 +31,7 @@ export function ColorPickerSection({
 }: ColorPickerSectionProps) {
   return (
     <div>
-      <label className={sectionLabelClass}>COLOR PALETTE</label>
+      <label className={sectionLabelClass}>Color</label>
       <div className="grid grid-cols-5 gap-2">
         {PRIMARY_COLORS.map((color) => (
           <button
@@ -39,13 +39,13 @@ export function ColorPickerSection({
             type="button"
             onClick={() => onColorSelect(color.tldraw)}
             className={`
-              w-full aspect-square rounded-lg transition-all duration-200
+              w-full aspect-square rounded-xl transition-all duration-200
               ${
                 activeColorHex === color.uiHex
-                  ? 'ring-2 ring-white ring-offset-2 ring-offset-[#1e1e1e] scale-95'
-                  : 'hover:scale-105'
+                  ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-950 scale-95 shadow-lg'
+                  : 'hover:scale-105 hover:ring-1 hover:ring-white/20'
               }
-              ${color.uiHex === '#FFFFFF' ? 'border-2 border-gray-600' : ''}
+              ${color.uiHex === '#FFFFFF' ? 'border border-zinc-600' : ''}
             `}
             style={{ backgroundColor: color.uiHex }}
             title={color.label}
@@ -55,10 +55,10 @@ export function ColorPickerSection({
         <ColorPickerPopover color={activeColorHex} onColorChange={onCustomColorHex}>
           <button
             type="button"
-            className="w-full aspect-square rounded-lg border-2 border-white/20 hover:border-white/40 bg-transparent flex items-center justify-center transition-all duration-200 hover:bg-white/5"
-            title="Add Custom Color"
+            className="w-full aspect-square rounded-xl border border-dashed border-white/20 hover:border-white/35 bg-white/[0.02] flex items-center justify-center transition-all duration-200 hover:bg-white/[0.05]"
+            title="Custom color"
           >
-            <Plus size={20} className="text-white/60" strokeWidth={2.5} />
+            <Plus size={18} className="text-zinc-500" strokeWidth={2.5} />
           </button>
         </ColorPickerPopover>
       </div>

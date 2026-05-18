@@ -42,8 +42,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                     className={`
                       w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200
                       ${activeTab === tab.id
-                        ? 'bg-white/15 text-white'
-                        : 'text-gray-400 hover:text-white hover:bg-white/5'
+                        ? 'bg-white/[0.1] text-white ring-1 ring-white/[0.06]'
+                        : 'text-zinc-500 hover:text-white hover:bg-white/[0.04]'
                       }
                     `}
                   >
@@ -58,8 +58,8 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
           {/* Right Content Panel */}
           <div className="flex-1 flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between px-8 py-5 border-b border-white/10">
-              <h3 className="text-white font-semibold text-lg">
+            <div className="flex items-center justify-between px-8 py-5 border-b border-white/[0.06]">
+              <h3 className="text-zinc-100 font-semibold text-base tracking-tight">
                 {tabs.find(t => t.id === activeTab)?.label}
               </h3>
               <Dialog.Close asChild>

@@ -1,5 +1,6 @@
 import * as ToggleGroup from '@radix-ui/react-toggle-group';
 import type { TLDefaultFillStyle } from 'tldraw';
+import { cn } from '../../ui/utils';
 import { sectionLabelClass, toggleGroupClass, toggleItemClass } from '../sectionStyles';
 
 export type FillUiStyle = 'none' | 'semi' | 'solid' | 'pattern';
@@ -13,18 +14,23 @@ const FILL_OPTIONS: { value: FillUiStyle; label: string }[] = [
 
 interface FillStyleSectionProps {
   value: FillUiStyle;
+  disabled?: boolean;
   onChange: (value: TLDefaultFillStyle) => void;
 }
 
-export function FillStyleSection({ value, onChange }: FillStyleSectionProps) {
+export function FillStyleSection({ value, disabled, onChange }: FillStyleSectionProps) {
   return (
     <div>
-      <label className={sectionLabelClass}>FILL STYLE</label>
+      <label className={sectionLabelClass}>Fill</label>
       <ToggleGroup.Root
         type="single"
         value={value}
+        disabled={disabled}
         onValueChange={(next) => next && onChange(next as TLDefaultFillStyle)}
-        className={`${toggleGroupClass} grid-cols-4`}
+        className={cn(
+          `${toggleGroupClass} grid-cols-4`,
+          disabled && 'opacity-40 pointer-events-none',
+        )}
       >
         {FILL_OPTIONS.map((option) => (
           <ToggleGroup.Item

@@ -2,6 +2,8 @@ import { Upload, FolderOpen } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useEditor } from 'tldraw';
 import { importFilesAtPoint } from '../lib/tldraw/importFiles';
+import { ChromePanel, chrome } from './ui/chrome';
+import { cn } from './ui/utils';
 
 export function ImportAssets() {
   const editor = useEditor();
@@ -19,9 +21,7 @@ export function ImportAssets() {
     setIsDragging(true);
   };
 
-  const handleDragLeave = () => {
-    setIsDragging(false);
-  };
+  const handleDragLeave = () => setIsDragging(false);
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
@@ -31,64 +31,56 @@ export function ImportAssets() {
     }
   };
 
-  const handleBrowse = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      await processFiles(e.target.files);
-      e.target.value = '';
-    }
-  };
-
   return (
-    <div className="bg-[#1e1e1e] border border-white/10 rounded-xl p-5 shadow-2xl">
-      <h3 className="text-sm font-semibold text-white mb-4 font-mono tracking-wide">IMPORT ASSETS</h3>
-
+    <ChromePanel title="Import Assets">
       <input
         ref={fileInputRef}
         type="file"
         multiple
         className="hidden"
-        onChange={handleFileInputChange}
+        onChange={async (e) => {
+          if (e.target.files?.length) {
+            await processFiles(e.target.files);
+            e.target.value = '';
+          }
+        }}
       />
 
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`
-          relative border-2 border-dashed rounded-xl p-6 transition-all duration-200
-          ${
-            isDragging
-              ? 'border-blue-500 bg-blue-500/10'
-              : 'border-white/20 hover:border-white/30 bg-white/5'
-          }
-        `}
+        className={cn(
+          'relative border-2 border-dashed rounded-xl p-6 transition-all duration-300',
+          isDragging
+            ? 'border-blue-500/60 bg-blue-500/10 scale-[1.01]'
+            : 'border-white/[0.1] bg-white/[0.02] hover:border-white/[0.18] hover:bg-white/[0.04]',
+        )}
       >
         <div className="flex flex-col items-center justify-center gap-3 text-center">
-          <div className="p-3 bg-white/10 rounded-full">
-            <Upload size={24} className="text-gray-400" />
+          <div
+            className={cn(
+              'p-3 rounded-2xl transition-colors duration-300',
+              isDragging ? 'bg-blue-500/20' : 'bg-white/[0.06]',
+            )}
+          >
+            <Upload
+              size={22}
+              className={cn('transition-colors', isDragging ? 'text-blue-400' : 'text-zinc-500')}
+            />
           </div>
           <div>
-            <p className="text-sm text-gray-300 font-medium mb-1">Drag & Drop Files Here</p>
-            <p className="text-xs text-gray-500">Images import natively · other files become cards</p>
+            <p className="text-sm text-zinc-300 font-medium">Drop files here</p>
+            <p className="text-xs text-zinc-600 mt-1">Images · documents · assets</p>
           </div>
-          <button
-            type="button"
-            onClick={handleBrowse}
-            className="px-4 py-2 bg-white/10 hover:bg-white/15 border border-white/20 text-white rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2"
-          >
-            <FolderOpen size={16} />
-            Browse Files / Images
+          <button type="button" onClick={() => fileInputRef.current?.click()} className={chrome.ghostBtn}>
+            <span className="flex items-center gap-2">
+              <FolderOpen size={16} />
+              Browse files
+            </span>
           </button>
         </div>
       </div>
-
-      <p className="text-xs text-gray-500 mt-3 text-center">
-        PNG, JPG, SVG, PDF, DOC — system-agnostic file pipeline
-      </p>
-    </div>
+    </ChromePanel>
   );
 }

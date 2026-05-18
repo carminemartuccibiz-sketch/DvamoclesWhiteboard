@@ -15,31 +15,50 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <div className={isDarkMode ? 'dark' : ''}>
-      <div className="w-screen h-screen bg-[#0a0a0a] overflow-hidden relative text-white">
+    <div className={isDarkMode ? 'dark font-ui' : 'font-ui'}>
+      <div className="relative w-screen h-screen overflow-hidden bg-[#030306] text-white antialiased">
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage: `
+              radial-gradient(ellipse 90% 60% at 50% -30%, rgba(59, 130, 246, 0.12), transparent 55%),
+              radial-gradient(ellipse 50% 40% at 100% 80%, rgba(139, 92, 246, 0.07), transparent 50%),
+              radial-gradient(ellipse 40% 30% at 0% 60%, rgba(14, 165, 233, 0.05), transparent 45%)
+            `,
+          }}
+        />
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.35]"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)',
+            backgroundSize: '64px 64px',
+          }}
+        />
+
         <Tldraw
           hideUi
           colorScheme={isDarkMode ? 'dark' : 'light'}
-          className="absolute inset-0"
+          className="absolute inset-0 z-0"
         >
           <div className="absolute inset-0 z-10 pointer-events-none">
-            <div className="pointer-events-auto">
+            <header className="pointer-events-auto">
               <TopLeftMenu onOpenSettings={() => setSettingsOpen(true)} />
               <TopRightStatus
                 isDarkMode={isDarkMode}
                 onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
               />
-            </div>
+            </header>
 
-            <div className="fixed left-8 top-32 z-40 w-80 max-h-[calc(100vh-200px)] overflow-y-auto custom-scrollbar space-y-4 pointer-events-auto">
+            <aside className="fixed left-5 top-[7rem] z-40 w-[19.5rem] max-h-[calc(100vh-8rem)] overflow-y-auto custom-scrollbar space-y-3 pointer-events-auto pr-1 dv-stagger">
               <ProjectNavigation />
               <PropertiesPanel />
               <ImportAssets />
-            </div>
+            </aside>
 
-            <div className="pointer-events-auto">
+            <footer className="pointer-events-auto">
               <FloatingToolbar />
-            </div>
+            </footer>
 
             <div className="pointer-events-auto">
               <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
