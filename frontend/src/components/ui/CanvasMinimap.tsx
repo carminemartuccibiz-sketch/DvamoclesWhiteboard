@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useEditor, type Editor, type TLShape } from 'tldraw';
+import { useEngine } from '../../engine/EngineContext';
 import { glassCard } from './panel';
 import { cn } from './utils';
 
@@ -7,20 +7,8 @@ const MINIMAP_W = 168;
 const MINIMAP_H = 120;
 const PAD = 8;
 
-function expandBounds(
-  a: { minX: number; minY: number; maxX: number; maxY: number },
-  b: { minX: number; minY: number; maxX: number; maxY: number },
-) {
-  return {
-    minX: Math.min(a.minX, b.minX),
-    minY: Math.min(a.minY, b.minY),
-    maxX: Math.max(a.maxX, b.maxX),
-    maxY: Math.max(a.maxY, b.maxY),
-  };
-}
-
 export function CanvasMinimap({ className }: { className?: string }) {
-  const editor = useEditor();
+  const engine = useEngine();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const draggingRef = useRef(false);
 
@@ -36,37 +24,17 @@ export function CanvasMinimap({ className }: { className?: string }) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, MINIMAP_W, MINIMAP_H);
 
-    const viewport = editor.getViewportPageBounds();
-    const pageBounds = editor.getCurrentPageBounds();
+    const viewport = engine.getVisibleBounds();
+    const entities = engine.getAllEntities();
+    const content = engine.getContentBounds() ?? {
+      minX: -2000,
+      minY: -2000,
+      maxX: 2000,
+      maxY: 2000,
+    };
 
-    let content = pageBounds
-      ? {
-          minX: pageBounds.minX,
-          minY: pageBounds.minY,
-          maxX: pageBounds.maxX,
-          maxY: pageBounds.maxY,
-        }
-      : viewport
-        ? {
-            minX: viewport.minX,
-            minY: viewport.minY,
-            maxX: viewport.maxX,
-            maxY: viewport.maxY,
-          }
-        : null;
-
-    if (viewport && content) {
-      content = expandBounds(content, viewport);
-    }
-
-    if (!content) {
-      ctx.fillStyle = 'rgba(255,255,255,0.04)';
-      ctx.fillRect(0, 0, MINIMAP_W, MINIMAP_H);
-      return;
-    }
-
-    const contentW = content.maxX - content.minX || 1;
-    const contentH = content.maxY - content.minY || 1;
+    const contentW = content.maxX - content.minX;
+    const contentH = content.maxY - content.minY;
     const innerW = MINIMAP_W - PAD * 2;
     const innerH = MINIMAP_H - PAD * 2;
     const scale = Math.min(innerW / contentW, innerH / contentH);
@@ -79,10 +47,12 @@ export function CanvasMinimap({ className }: { className?: string }) {
     ctx.fillStyle = 'rgba(10,10,10,0.85)';
     ctx.fillRect(0, 0, MINIMAP_W, MINIMAP_H);
 
-    const shapes = editor.getCurrentPageShapes();
-    ctx.fillStyle = 'rgba(47, 128, 237, 0.45)';
-    for (const shape of shapes) {
-      drawShapeMini(ctx, editor, shape, toMini);
+    for (const entity of entities) {
+      const tl = toMini(entity.x, entity.y);
+      const br = toMini(entity.x + entity.width, entity.y + entity.height);
+      const isDoc = entity.type === 'document';
+      ctx.fillStyle = isDoc ? 'rgba(155,107,255,0.45)' : 'rgba(255,255,255,0.35)';
+      ctx.fillRect(tl.x, tl.y, Math.max(br.x - tl.x, 2), Math.max(br.y - tl.y, 2));
     }
 
     if (viewport) {
@@ -94,81 +64,57 @@ export function CanvasMinimap({ className }: { className?: string }) {
       ctx.fillStyle = 'rgba(47, 128, 237, 0.12)';
       ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
     }
-  }, [editor]);
+
+    const center = toMini(engine.camera.x, engine.camera.y);
+    ctx.fillStyle = 'rgba(47, 128, 237, 0.9)';
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }, [engine]);
 
   useEffect(() => {
     render();
-    const unlisten = editor.store.listen(render);
-    return () => unlisten();
-  }, [editor, render]);
+    return engine.subscribe(render);
+  }, [engine, render]);
 
   const pagePointFromEvent = useCallback(
     (clientX: number, clientY: number) => {
       const canvas = canvasRef.current;
       if (!canvas) return null;
 
-      const viewport = editor.getViewportPageBounds();
-      const pageBounds = editor.getCurrentPageBounds();
-      let content = pageBounds
-        ? {
-            minX: pageBounds.minX,
-            minY: pageBounds.minY,
-            maxX: pageBounds.maxX,
-            maxY: pageBounds.maxY,
-          }
-        : viewport
-          ? {
-              minX: viewport.minX,
-              minY: viewport.minY,
-              maxX: viewport.maxX,
-              maxY: viewport.maxY,
-            }
-          : null;
-
-      if (viewport && content) content = expandBounds(content, viewport);
-      if (!content) return null;
-
       const rect = canvas.getBoundingClientRect();
       const localX = clientX - rect.left;
       const localY = clientY - rect.top;
 
-      const contentW = content.maxX - content.minX || 1;
-      const contentH = content.maxY - content.minY || 1;
+      const content = engine.getContentBounds() ?? {
+        minX: -2000,
+        minY: -2000,
+        maxX: 2000,
+        maxY: 2000,
+      };
+
+      const contentW = content.maxX - content.minX;
+      const contentH = content.maxY - content.minY;
       const innerW = MINIMAP_W - PAD * 2;
       const innerH = MINIMAP_H - PAD * 2;
       const scale = Math.min(innerW / contentW, innerH / contentH);
 
-      const pageX = content.minX + (localX - PAD) / scale;
-      const pageY = content.minY + (localY - PAD) / scale;
-      return { x: pageX, y: pageY };
+      return {
+        x: content.minX + (localX - PAD) / scale,
+        y: content.minY + (localY - PAD) / scale,
+      };
     },
-    [editor],
+    [engine],
   );
 
   const centerCameraOn = useCallback(
     (clientX: number, clientY: number) => {
       const point = pagePointFromEvent(clientX, clientY);
       if (!point) return;
-      editor.centerOnPoint(point, { animation: { duration: 120 } });
+      engine.centerOnPoint(point.x, point.y);
     },
-    [editor, pagePointFromEvent],
+    [engine, pagePointFromEvent],
   );
-
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    draggingRef.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    centerCameraOn(e.clientX, e.clientY);
-  };
-
-  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!draggingRef.current) return;
-    centerCameraOn(e.clientX, e.clientY);
-  };
-
-  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    draggingRef.current = false;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  };
 
   return (
     <div
@@ -183,31 +129,24 @@ export function CanvasMinimap({ className }: { className?: string }) {
         ref={canvasRef}
         className="w-full h-full cursor-crosshair touch-none"
         style={{ width: MINIMAP_W, height: MINIMAP_H }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
+        onPointerDown={(e) => {
+          draggingRef.current = true;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          centerCameraOn(e.clientX, e.clientY);
+        }}
+        onPointerMove={(e) => {
+          if (!draggingRef.current) return;
+          centerCameraOn(e.clientX, e.clientY);
+        }}
+        onPointerUp={(e) => {
+          draggingRef.current = false;
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }}
+        onPointerLeave={() => {
+          draggingRef.current = false;
+        }}
         aria-label="Canvas minimap"
       />
     </div>
   );
-}
-
-function drawShapeMini(
-  ctx: CanvasRenderingContext2D,
-  editor: Editor,
-  shape: TLShape,
-  toMini: (x: number, y: number) => { x: number; y: number },
-) {
-  const bounds = editor.getShapeMaskedPageBounds(shape.id);
-  if (!bounds) return;
-
-  const selected = editor.getSelectedShapeIds().includes(shape.id);
-  const tl = toMini(bounds.minX, bounds.minY);
-  const br = toMini(bounds.maxX, bounds.maxY);
-  const w = Math.max(br.x - tl.x, 1);
-  const h = Math.max(br.y - tl.y, 1);
-
-  ctx.fillStyle = selected ? 'rgba(47, 128, 237, 0.75)' : 'rgba(255,255,255,0.22)';
-  ctx.fillRect(tl.x, tl.y, w, h);
 }

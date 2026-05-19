@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   Circle,
   Diamond,
   Eraser,
   Hand,
+  Link2,
   Minus,
   MousePointer2,
   MoveRight,
@@ -13,8 +14,10 @@ import {
   Square,
   Type,
 } from 'lucide-react';
-import { GeoShapeGeoStyle, useEditor, type TLGeoShapeGeoStyle } from 'tldraw';
-import { createLinedPaper } from '../lib/tldraw/createLinedPaper';
+import { useEngine } from '../engine/EngineContext';
+import { shouldIgnoreCanvasShortcuts } from '../lib/keyboard/canvasShortcuts';
+import { pluginManager } from '../plugins/pluginRegistry';
+import type { PluginToolbarEntry } from '../plugins/types';
 
 export type ToolId =
   | 'select'
@@ -26,9 +29,13 @@ export type ToolId =
   | 'draw'
   | 'line'
   | 'text'
+  | 'link'
   | 'eraser';
 
 export type ToolbarActionId = 'linedPaper';
+
+/** Any canvas tool id, including plugin-registered tools (`plugin:…`) */
+export type ActiveToolId = ToolId | ToolbarActionId | string;
 
 export type ToolbarEntry =
   | {
@@ -45,9 +52,10 @@ export type ToolbarEntry =
       icon: LucideIcon;
       label: string;
       shortcut?: string;
-    };
+    }
+  | PluginToolbarEntry;
 
-export const TOOLBAR_ENTRIES: ToolbarEntry[] = [
+export const CORE_TOOLBAR_ENTRIES: ToolbarEntry[] = [
   { kind: 'tool', id: 'select', icon: MousePointer2, label: 'Select', shortcut: 'V', digit: '1' },
   { kind: 'tool', id: 'pan', icon: Hand, label: 'Hand', shortcut: 'H', digit: '2' },
   { kind: 'tool', id: 'rectangle', icon: Square, label: 'Rectangle', shortcut: 'R', digit: '3' },
@@ -57,124 +65,102 @@ export const TOOLBAR_ENTRIES: ToolbarEntry[] = [
   { kind: 'tool', id: 'draw', icon: Pen, label: 'Draw', shortcut: 'P', digit: '7' },
   { kind: 'tool', id: 'line', icon: Minus, label: 'Line', shortcut: 'L', digit: '8' },
   { kind: 'tool', id: 'text', icon: Type, label: 'Text', shortcut: 'T', digit: '9' },
+  { kind: 'tool', id: 'link', icon: Link2, label: 'Spatial Link', shortcut: 'K' },
   { kind: 'tool', id: 'eraser', icon: Eraser, label: 'Eraser', shortcut: 'E' },
   { kind: 'action', id: 'linedPaper', icon: ScrollText, label: 'Lined Paper' },
 ];
 
-const GEO_TOOL_MAP: Partial<Record<ToolId, TLGeoShapeGeoStyle>> = {
-  rectangle: 'rectangle',
-  circle: 'ellipse',
-  diamond: 'diamond',
-};
+function buildShortcutMap(entries: ToolbarEntry[]): Record<string, ActiveToolId> {
+  const map: Record<string, ActiveToolId> = {
+    v: 'select',
+    '1': 'select',
+    h: 'pan',
+    '2': 'pan',
+    r: 'rectangle',
+    '3': 'rectangle',
+    d: 'diamond',
+    '4': 'diamond',
+    o: 'circle',
+    '5': 'circle',
+    a: 'arrow',
+    '6': 'arrow',
+    p: 'draw',
+    '7': 'draw',
+    l: 'line',
+    '8': 'line',
+    t: 'text',
+    '9': 'text',
+    k: 'link',
+    e: 'eraser',
+  };
 
-const SHORTCUT_BY_KEY: Record<string, ToolId | ToolbarActionId> = {
-  v: 'select',
-  '1': 'select',
-  h: 'pan',
-  '2': 'pan',
-  r: 'rectangle',
-  '3': 'rectangle',
-  d: 'diamond',
-  '4': 'diamond',
-  o: 'circle',
-  '5': 'circle',
-  a: 'arrow',
-  '6': 'arrow',
-  p: 'draw',
-  '7': 'draw',
-  l: 'line',
-  '8': 'line',
-  t: 'text',
-  '9': 'text',
-  e: 'eraser',
-};
+  for (const entry of entries) {
+    if (entry.kind === 'plugin-tool' && entry.shortcut) {
+      map[entry.shortcut.toLowerCase()] = entry.id;
+    }
+  }
 
-function geoToToolId(geo: TLGeoShapeGeoStyle): ToolId | null {
-  if (geo === 'rectangle') return 'rectangle';
-  if (geo === 'ellipse') return 'circle';
-  if (geo === 'diamond') return 'diamond';
-  return null;
-}
-
-function isEditableTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  return target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  return map;
 }
 
 export function useToolbarTools() {
-  const editor = useEditor();
-  const [activeTool, setActiveTool] = useState<ToolId | ToolbarActionId>('select');
+  const engine = useEngine();
+  const [activeTool, setActiveToolLocal] = useState<ActiveToolId>(engine.activeTool);
 
-  const syncFromEditor = useCallback(() => {
-    const currentTool = editor.getCurrentToolId();
-    if (currentTool === 'hand') {
-      setActiveTool('pan');
-      return;
-    }
-    if (currentTool === 'geo') {
-      const mapped = geoToToolId(editor.getStyleForNextShape(GeoShapeGeoStyle));
-      if (mapped) setActiveTool(mapped);
-      return;
-    }
-    if (
-      currentTool === 'select' ||
-      currentTool === 'arrow' ||
-      currentTool === 'draw' ||
-      currentTool === 'line' ||
-      currentTool === 'text' ||
-      currentTool === 'eraser'
-    ) {
-      setActiveTool(currentTool);
-    }
-  }, [editor]);
-
-  useEffect(() => {
-    syncFromEditor();
-    const unlisten = editor.store.listen(syncFromEditor, { source: 'user' });
-    return () => unlisten();
-  }, [editor, syncFromEditor]);
-
-  const activateGeoTool = useCallback(
-    (geo: TLGeoShapeGeoStyle, toolId: ToolId) => {
-      editor.setStyleForNextShapes(GeoShapeGeoStyle, geo);
-      editor.setCurrentTool('geo');
-      setActiveTool(toolId);
-    },
-    [editor],
+  const entries = useMemo<ToolbarEntry[]>(
+    () => [...CORE_TOOLBAR_ENTRIES, ...pluginManager.getToolbarEntries()],
+    [],
   );
 
+  const shortcutByKey = useMemo(() => buildShortcutMap(entries), [entries]);
+
+  useEffect(() => {
+    return engine.subscribe(() => {
+      setActiveToolLocal(engine.activeTool);
+    });
+  }, [engine]);
+
   const activateTool = useCallback(
-    (toolId: ToolId | ToolbarActionId) => {
-      if (toolId === 'linedPaper') {
-        createLinedPaper(editor);
-        setActiveTool('select');
+    (toolId: ActiveToolId) => {
+      if (toolId === 'linedPaper') return;
+
+      const pluginEntry = entries.find(
+        (entry): entry is PluginToolbarEntry =>
+          entry.kind === 'plugin-tool' && entry.id === toolId,
+      );
+
+      if (pluginEntry) {
+        const definition = pluginManager.findTool(pluginEntry.pluginId, pluginEntry.id);
+        engine.setActiveTool(toolId);
+        setActiveToolLocal(toolId);
+        definition?.onActivate?.({
+          engine: {
+            activeTool: engine.activeTool,
+            setActiveTool: engine.setActiveTool,
+            selectedIds: engine.selectedIds,
+            getAllEntities: engine.getAllEntities,
+            getEntity: engine.getEntity,
+            subscribe: engine.subscribe,
+          },
+          pluginId: pluginEntry.pluginId,
+          toolId: pluginEntry.id,
+        });
         return;
       }
-      switch (toolId) {
-        case 'pan':
-          editor.setCurrentTool('hand');
-          break;
-        case 'rectangle':
-        case 'circle':
-        case 'diamond':
-          activateGeoTool(GEO_TOOL_MAP[toolId]!, toolId);
-          return;
-        default:
-          editor.setCurrentTool(toolId);
-      }
-      setActiveTool(toolId);
+
+      engine.setActiveTool(toolId);
+      setActiveToolLocal(toolId);
     },
-    [editor, activateGeoTool],
+    [engine, entries],
   );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (isEditableTarget(event.target)) return;
+      if (shouldIgnoreCanvasShortcuts(event)) return;
 
       const key = event.key.length === 1 ? event.key.toLowerCase() : event.key.toLowerCase();
-      const mapped = SHORTCUT_BY_KEY[key];
+      const mapped = shortcutByKey[key];
       if (!mapped) return;
 
       event.preventDefault();
@@ -183,7 +169,10 @@ export function useToolbarTools() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activateTool]);
+  }, [activateTool, shortcutByKey]);
 
-  return { activeTool, activateTool, entries: TOOLBAR_ENTRIES };
+  return { activeTool, activateTool, entries };
 }
+
+/** @deprecated Use CORE_TOOLBAR_ENTRIES — kept for imports that expect core-only list */
+export const TOOLBAR_ENTRIES = CORE_TOOLBAR_ENTRIES;

@@ -1,7 +1,7 @@
 import { FileImage, FileCode2 } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
-import { useEditor } from 'tldraw';
-import { exportDocumentAsPng, exportDocumentAsSvg } from '../lib/tldraw/exportDocument';
+import { useEngine } from '../engine/EngineContext';
+import { exportDocumentAsPng, exportDocumentAsSvg } from '../lib/exportDocument';
 import { chrome } from './ui/chrome';
 
 interface ExportMenuItemsProps {
@@ -9,8 +9,8 @@ interface ExportMenuItemsProps {
   isDarkMode?: boolean;
 }
 
-export function ExportMenuItems({ documentTitle, isDarkMode }: ExportMenuItemsProps) {
-  const editor = useEditor();
+export function ExportMenuItems({ documentTitle }: ExportMenuItemsProps) {
+  const engine = useEngine();
 
   const runExport = (fn: () => Promise<void>) => {
     void fn().catch(() => {
@@ -31,7 +31,7 @@ export function ExportMenuItems({ documentTitle, isDarkMode }: ExportMenuItemsPr
             className={chrome.dropdownItem}
             onSelect={(e) => {
               e.preventDefault();
-              runExport(() => exportDocumentAsPng(editor, documentTitle, isDarkMode));
+              runExport(() => exportDocumentAsPng(engine, documentTitle));
             }}
           >
             <FileImage size={16} className="text-zinc-500" />
@@ -41,7 +41,7 @@ export function ExportMenuItems({ documentTitle, isDarkMode }: ExportMenuItemsPr
             className={chrome.dropdownItem}
             onSelect={(e) => {
               e.preventDefault();
-              runExport(() => exportDocumentAsSvg(editor, documentTitle, isDarkMode));
+              runExport(() => exportDocumentAsSvg(engine, documentTitle));
             }}
           >
             <FileCode2 size={16} className="text-zinc-500" />

@@ -1,9 +1,9 @@
 import * as ToggleGroup from '@radix-ui/react-toggle-group';
-import type { TLDefaultFillStyle } from 'tldraw';
+import type { DvFillStyle } from '../../../contracts/styles';
 import { cn } from '../../ui/utils';
 import { sectionLabelClass, toggleGroupClass, toggleItemClass } from '../sectionStyles';
 
-export type FillUiStyle = 'none' | 'semi' | 'solid' | 'pattern';
+export type FillUiStyle = DvFillStyle;
 
 const FILL_OPTIONS: { value: FillUiStyle; label: string }[] = [
   { value: 'none', label: 'None' },
@@ -15,7 +15,7 @@ const FILL_OPTIONS: { value: FillUiStyle; label: string }[] = [
 interface FillStyleSectionProps {
   value: FillUiStyle;
   disabled?: boolean;
-  onChange: (value: TLDefaultFillStyle) => void;
+  onChange: (value: DvFillStyle) => void;
 }
 
 export function FillStyleSection({ value, disabled, onChange }: FillStyleSectionProps) {
@@ -26,19 +26,15 @@ export function FillStyleSection({ value, disabled, onChange }: FillStyleSection
         type="single"
         value={value}
         disabled={disabled}
-        onValueChange={(next) => next && onChange(next as TLDefaultFillStyle)}
+        onValueChange={(next) => next && onChange(next as DvFillStyle)}
         className={cn(
-          `${toggleGroupClass} grid-cols-4`,
-          disabled && 'opacity-40 pointer-events-none',
+          toggleGroupClass,
+          disabled && 'opacity-50 pointer-events-none',
         )}
       >
-        {FILL_OPTIONS.map((option) => (
-          <ToggleGroup.Item
-            key={option.value}
-            value={option.value}
-            className={toggleItemClass}
-          >
-            {option.label}
+        {FILL_OPTIONS.map((opt) => (
+          <ToggleGroup.Item key={opt.value} value={opt.value} className={toggleItemClass}>
+            {opt.label}
           </ToggleGroup.Item>
         ))}
       </ToggleGroup.Root>

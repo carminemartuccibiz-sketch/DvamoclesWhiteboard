@@ -3,6 +3,7 @@ import * as Switch from '@radix-ui/react-switch';
 import * as Select from '@radix-ui/react-select';
 import { X, Settings, Grid3x3, Keyboard, Info, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
+import { useEngine } from '../engine/EngineContext';
 
 interface SettingsModalProps {
   open: boolean;
@@ -10,6 +11,7 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
+  const engine = useEngine();
   const [activeTab, setActiveTab] = useState('general');
   const [autoSave, setAutoSave] = useState(true);
   const [snapToGrid, setSnapToGrid] = useState(false);
@@ -114,7 +116,11 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                         </Select.Icon>
                       </Select.Trigger>
                       <Select.Portal>
-                        <Select.Content className="bg-black/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+                        <Select.Content
+                          position="popper"
+                          sideOffset={6}
+                          className="z-[200] bg-black/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden"
+                        >
                           <Select.Viewport className="p-2">
                             <Select.Item value="png" className="px-4 py-2.5 text-sm text-gray-200 hover:bg-white/10 hover:text-white rounded-lg cursor-pointer outline-none">
                               <Select.ItemText>PNG (Raster Image)</Select.ItemText>
@@ -142,8 +148,38 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
               )}
 
               {activeTab === 'canvas' && (
-                <div className="space-y-4">
-                  <p className="text-gray-400 text-sm">Canvas and grid settings will appear here.</p>
+                <div className="space-y-8">
+                  <div className="flex items-center justify-between py-2">
+                    <div>
+                      <label className="text-white text-sm font-medium block">Dark mode</label>
+                      <p className="text-gray-400 text-xs mt-1.5">
+                        Applies to the app shell and canvas background
+                      </p>
+                    </div>
+                    <Switch.Root
+                      checked={engine.isDarkMode}
+                      onCheckedChange={engine.setIsDarkMode}
+                      className="w-11 h-6 bg-white/20 rounded-full relative data-[state=checked]:bg-blue-500 transition-colors duration-200"
+                    >
+                      <Switch.Thumb className="block w-5 h-5 bg-white rounded-full transition-transform duration-200 translate-x-0.5 data-[state=checked]:translate-x-[22px] shadow-lg" />
+                    </Switch.Root>
+                  </div>
+
+                  <div className="flex items-center justify-between py-2">
+                    <div>
+                      <label className="text-white text-sm font-medium block">Show grid</label>
+                      <p className="text-gray-400 text-xs mt-1.5">
+                        Dot and line grid on the canvas (off by default)
+                      </p>
+                    </div>
+                    <Switch.Root
+                      checked={engine.showGrid}
+                      onCheckedChange={engine.setShowGrid}
+                      className="w-11 h-6 bg-white/20 rounded-full relative data-[state=checked]:bg-blue-500 transition-colors duration-200"
+                    >
+                      <Switch.Thumb className="block w-5 h-5 bg-white rounded-full transition-transform duration-200 translate-x-0.5 data-[state=checked]:translate-x-[22px] shadow-lg" />
+                    </Switch.Root>
+                  </div>
                 </div>
               )}
 

@@ -5,31 +5,17 @@ import {
   AlignRight,
   AlignVerticalDistributeCenter,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
-import { useEditor } from 'tldraw';
+import { useState } from 'react';
 import { PropertyCard } from '../../ui/panel';
-import { cn } from '../../ui/utils';
 
 const alignBtn =
   'flex-1 flex items-center justify-center p-2.5 rounded-lg bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 hover:border-white/20 transition-all active:scale-95';
 
+/** Shown when multi-select is wired in Phase 3 */
 export function AlignmentSection() {
-  const editor = useEditor();
-  const [selectedCount, setSelectedCount] = useState(0);
-
-  const syncSelection = useCallback(() => {
-    setSelectedCount(editor.getSelectedShapeIds().length);
-  }, [editor]);
-
-  useEffect(() => {
-    syncSelection();
-    const unlisten = editor.store.listen(syncSelection);
-    return () => unlisten();
-  }, [editor, syncSelection]);
+  const [selectedCount] = useState(0);
 
   if (selectedCount < 2) return null;
-
-  const ids = editor.getSelectedShapeIds();
 
   return (
     <PropertyCard title="Align & Distribute">
@@ -37,28 +23,13 @@ export function AlignmentSection() {
         <div>
           <span className="text-white/50 text-xs font-ui block mb-2">Align</span>
           <div className="flex gap-1.5">
-            <button
-              type="button"
-              className={alignBtn}
-              aria-label="Align left"
-              onClick={() => editor.alignShapes(ids, 'left')}
-            >
+            <button type="button" className={alignBtn} aria-label="Align left">
               <AlignLeft className="w-4 h-4" />
             </button>
-            <button
-              type="button"
-              className={alignBtn}
-              aria-label="Align center"
-              onClick={() => editor.alignShapes(ids, 'center-horizontal')}
-            >
+            <button type="button" className={alignBtn} aria-label="Align center">
               <AlignCenter className="w-4 h-4" />
             </button>
-            <button
-              type="button"
-              className={cn(alignBtn)}
-              aria-label="Align right"
-              onClick={() => editor.alignShapes(ids, 'right')}
-            >
+            <button type="button" className={alignBtn} aria-label="Align right">
               <AlignRight className="w-4 h-4" />
             </button>
           </div>
@@ -66,20 +37,10 @@ export function AlignmentSection() {
         <div>
           <span className="text-white/50 text-xs font-ui block mb-2">Distribute</span>
           <div className="flex gap-1.5">
-            <button
-              type="button"
-              className={alignBtn}
-              aria-label="Distribute horizontally"
-              onClick={() => editor.distributeShapes(ids, 'horizontal')}
-            >
+            <button type="button" className={alignBtn} aria-label="Distribute horizontally">
               <AlignHorizontalDistributeCenter className="w-4 h-4" />
             </button>
-            <button
-              type="button"
-              className={alignBtn}
-              aria-label="Distribute vertically"
-              onClick={() => editor.distributeShapes(ids, 'vertical')}
-            >
+            <button type="button" className={alignBtn} aria-label="Distribute vertically">
               <AlignVerticalDistributeCenter className="w-4 h-4" />
             </button>
           </div>

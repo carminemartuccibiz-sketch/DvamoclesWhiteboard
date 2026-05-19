@@ -1,4 +1,5 @@
 import { usePropertiesPanel } from '../hooks/usePropertiesPanel';
+import { usePluginPropertyPanels } from '../hooks/usePluginPropertyPanels';
 import { PropertyCard } from './ui/panel';
 import { ColorPickerSection } from './properties/sections/ColorPickerSection';
 import { FillStyleSection } from './properties/sections/FillStyleSection';
@@ -9,10 +10,11 @@ import { StrokeWidthSection } from './properties/sections/StrokeWidthSection';
 import { AlignmentSection } from './properties/sections/AlignmentSection';
 
 const sidebarScrollClass =
-  'flex flex-col gap-4 w-[260px] max-w-[min(260px,26vw)] shrink-0 min-h-0 max-h-[calc(100vh-140px)] overflow-y-auto custom-scrollbar pb-6';
+  'flex flex-col gap-4 w-[260px] max-w-[min(260px,26vw)] shrink-0 min-h-0 max-h-[calc(100vh-140px)] overflow-x-visible overflow-y-auto custom-scrollbar pb-6';
 
 export function RightSidebar() {
   const props = usePropertiesPanel();
+  const { panels, pluginEngine, selection } = usePluginPropertyPanels();
 
   return (
     <aside className={sidebarScrollClass}>
@@ -26,6 +28,15 @@ export function RightSidebar() {
           </div>
         </div>
       </PropertyCard>
+
+      {panels.map(({ pluginId, panel }) => {
+        const PanelComponent = panel.component;
+        return (
+          <PropertyCard key={`${pluginId}:${panel.id}`} title={panel.title}>
+            <PanelComponent engine={pluginEngine} pluginId={pluginId} selection={selection} />
+          </PropertyCard>
+        );
+      })}
 
       <PropertyCard title="Style">
         <div className="space-y-4">
@@ -42,7 +53,6 @@ export function RightSidebar() {
           <FillStyleSection value={props.fillStyle} onChange={props.handleFillChange} />
           <StrokeStyleSection
             value={props.strokeStyle}
-            disabled={props.sloppiness === 'sketchy'}
             onChange={props.handleStrokeStyleChange}
           />
           <StrokeWidthSection value={props.strokeWidth} onChange={props.handleStrokeWidthChange} />

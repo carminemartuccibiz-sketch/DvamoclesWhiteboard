@@ -2,10 +2,6 @@
 @import './tailwind.css';
 @import './theme.css';
 
-.tl-watermark_logo {
-  display: none !important;
-}
-
 @layer base {
   html {
     font-family: var(--font-sans);
@@ -39,6 +35,67 @@
 
   .dv-stagger > * {
     animation: dv-fade-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .dv-canvas-dropzone-label {
+    @apply px-6 py-4 rounded-xl border border-violet-500/40 bg-violet-500/10 text-violet-200 text-sm shadow-2xl;
+    font-family: var(--font-sans);
+  }
+
+  .dv-document-shell {
+    @apply rounded-lg border border-zinc-700/80 bg-zinc-950/90 shadow-2xl overflow-hidden;
+    transform-origin: top left;
+  }
+
+  .dv-document-body {
+    @apply px-3.5 py-2 text-zinc-200 text-sm leading-relaxed;
+    font-family: var(--font-sans);
+    max-height: 100%;
+  }
+
+  .dv-document-body .dv-doc-h {
+    @apply text-violet-300 font-semibold mt-2 mb-1;
+  }
+
+  .dv-document-body .dv-doc-p {
+    @apply mb-2 text-zinc-300;
+  }
+
+  .dv-document-body .dv-doc-li {
+    @apply mb-1 pl-3 text-zinc-300 list-disc list-inside;
+  }
+
+  .dv-document-body .dv-doc-code {
+    @apply mb-2 p-2 rounded bg-zinc-900 font-mono text-xs text-emerald-300/90 whitespace-pre-wrap;
+  }
+
+  .dv-document-body ::selection {
+    @apply bg-violet-500/40 text-white;
+  }
+
+  .dv-document-greeking {
+    @apply flex flex-col gap-2.5 px-3.5 py-2 overflow-hidden pointer-events-none;
+  }
+
+  .dv-doc-greek-bar {
+    @apply rounded-sm bg-zinc-600/50;
+    height: 8px;
+    width: 72%;
+  }
+
+  .dv-doc-greek-bar--heading {
+    height: 12px;
+    width: 48%;
+    @apply bg-zinc-500/55;
+  }
+
+  .dv-doc-greek-bar--code {
+    width: 88%;
+    @apply bg-zinc-700/60;
+  }
+
+  .dv-document-shell--greeked {
+    @apply border-zinc-600/60 bg-zinc-900/95;
   }
 
   .dv-stagger > *:nth-child(1) {

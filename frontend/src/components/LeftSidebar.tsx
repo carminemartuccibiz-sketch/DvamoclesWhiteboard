@@ -1,72 +1,36 @@
 import { MapPin, Plus, Upload, FolderOpen } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { createShapeId, useEditor, type TLGroupShape, type TLShapeId } from 'tldraw';
-import { importFilesAtPoint } from '../lib/tldraw/importFiles';
+import { useRef, useState } from 'react';
+import { useEngine } from '../engine/EngineContext';
 import { FloatingCard } from './ui/panel';
 import { chrome } from './ui/chrome';
 import { cn } from './ui/utils';
-
-interface SchemaOutlineItem {
-  id: TLShapeId;
-  name: string;
-}
-
-function getSchemaName(shape: TLGroupShape) {
-  const meta = shape.meta as { schemaName?: string };
-  return typeof meta.schemaName === 'string' ? meta.schemaName : null;
-}
 
 const sidebarScrollClass =
   'flex flex-col gap-4 w-[280px] max-w-[min(280px,28vw)] shrink-0 min-h-0 max-h-[calc(100vh-140px)] overflow-y-auto custom-scrollbar pb-6';
 
 export function LeftSidebar() {
-  const editor = useEditor();
+  const engine = useEngine();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [schemaName, setSchemaName] = useState('');
-  const [outline, setOutline] = useState<SchemaOutlineItem[]>([]);
-  const [activeId, setActiveId] = useState<TLShapeId | null>(null);
+  const [outline] = useState<{ id: string; name: string }[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-
-  const refreshOutline = useCallback(() => {
-    const items = editor
-      .getCurrentPageShapes()
-      .filter((shape): shape is TLGroupShape => shape.type === 'group')
-      .map((group) => {
-        const name = getSchemaName(group);
-        return name ? { id: group.id, name } : null;
-      })
-      .filter((item): item is SchemaOutlineItem => item !== null);
-    setOutline(items);
-  }, [editor]);
-
-  useEffect(() => {
-    refreshOutline();
-    const unlisten = editor.store.listen(refreshOutline);
-    return () => unlisten();
-  }, [editor, refreshOutline]);
-
-  const handleNameSelection = () => {
-    const trimmed = schemaName.trim();
-    if (!trimmed) return;
-    const selectedIds = editor.getSelectedShapeIds();
-    if (selectedIds.length < 2) return;
-    const groupId = createShapeId();
-    editor.groupShapes(selectedIds, { groupId, select: true });
-    editor.updateShapes([{ id: groupId, type: 'group', meta: { schemaName: trimmed } }]);
-    setSchemaName('');
-    refreshOutline();
-  };
-
-  const handleOutlineSelect = (id: TLShapeId) => {
-    setActiveId(id);
-    editor.select(id);
-    editor.zoomToSelection({ animation: { duration: 280 } });
-  };
 
   const processFiles = async (files: FileList | File[]) => {
     const list = Array.from(files);
     if (list.length === 0) return;
-    await importFilesAtPoint(editor, list);
+
+    const bounds = engine.getVisibleBounds();
+    const centerX = bounds ? (bounds.minX + bounds.maxX) / 2 : 0;
+    const centerY = bounds ? (bounds.minY + bounds.maxY) / 2 : 0;
+
+    for (const file of list) {
+      if (file.type.startsWith('image/')) {
+        await engine.importImageFile(file, centerX, centerY);
+        continue;
+      }
+      await engine.importDocumentFile(file, centerX, centerY);
+    }
   };
 
   return (
@@ -82,16 +46,12 @@ export function LeftSidebar() {
               type="text"
               value={schemaName}
               onChange={(e) => setSchemaName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleNameSelection();
-              }}
               placeholder="Schema name…"
               className={chrome.input}
             />
             <button
               type="button"
-              onClick={handleNameSelection}
-              className={`w-full ${chrome.primaryBtn} flex items-center justify-center gap-2`}
+              className={`w-full ${chrome.primaryBtn} flex items-center justify-center gap-2 opacity-50 cursor-not-allowed`}
             >
               <Plus size={16} />
               Name Selection
@@ -102,7 +62,7 @@ export function LeftSidebar() {
           <label className={cn(chrome.sectionLabel, 'px-2')}>Outline</label>
           {outline.length === 0 ? (
             <p className="text-xs text-zinc-600 px-3 py-2 leading-relaxed">
-              Select 2+ shapes, name them, and they appear here.
+              Groups will appear here once the world entity system is connected.
             </p>
           ) : (
             <div className="space-y-0.5">
@@ -110,20 +70,13 @@ export function LeftSidebar() {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => handleOutlineSelect(item.id)}
+                  onClick={() => setActiveId(item.id)}
                   className={cn(
                     chrome.outlineItem,
                     activeId === item.id && 'bg-white/[0.08] text-white ring-1 ring-white/[0.06]',
                   )}
                 >
-                  <MapPin
-                    size={15}
-                    className={
-                      activeId === item.id
-                        ? 'text-blue-400'
-                        : 'text-zinc-500 group-hover:text-blue-400/80'
-                    }
-                  />
+                  <MapPin size={15} className="text-zinc-500" />
                   <span className="flex-1 text-left truncate">{item.name}</span>
                 </button>
               ))}
@@ -141,6 +94,7 @@ export function LeftSidebar() {
             ref={fileInputRef}
             type="file"
             multiple
+            accept="image/*,.pdf,.txt,.md,.doc,.docx"
             className="hidden"
             onChange={async (e) => {
               if (e.target.files?.length) {

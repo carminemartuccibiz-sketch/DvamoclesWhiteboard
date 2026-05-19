@@ -1,44 +1,62 @@
-import { Check, Loader2, Moon, Plus, Minus, Save, Settings, Sun, Trash2 } from 'lucide-react';
+import {
+  Check,
+  FolderOpen,
+  Loader2,
+  Moon,
+  Minus,
+  Plus,
+  Save,
+  Settings,
+  Sun,
+  Trash2,
+} from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import * as Switch from '@radix-ui/react-switch';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getSnapshot, useEditor } from 'tldraw';
+import { useEngine } from '../engine/EngineContext';
+import { loadProjectFromBackend, saveProjectToBackend } from '../lib/state/canvasPersistence';
 import { ExportMenuItems } from './ExportMenu';
 import { chrome } from './ui/chrome';
 import { glassCard } from './ui/panel';
 import { cn } from './ui/utils';
 
-const API_BASE = 'http://127.0.0.1:8000';
-
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+type LoadStatus = 'idle' | 'loading' | 'loaded' | 'error';
 
 interface TopBarProps {
   isDarkMode: boolean;
-  onToggleDarkMode: () => void;
+  onDarkModeChange: (value: boolean) => void;
   onOpenSettings: () => void;
 }
 
-export function TopBar({ isDarkMode, onToggleDarkMode, onOpenSettings }: TopBarProps) {
-  const editor = useEditor();
+function slugFromTitle(title: string): string {
+  return title
+    .trim()
+    .toLowerCase()
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 128) || 'untitled';
+}
+
+export function TopBar({ isDarkMode, onDarkModeChange, onOpenSettings }: TopBarProps) {
+  const engine = useEngine();
   const [documentTitle, setDocumentTitle] = useState('Untitled Project 1');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
-  const [zoom, setZoom] = useState(100);
+  const [loadStatus, setLoadStatus] = useState<LoadStatus>('idle');
+  const [zoom, setZoom] = useState(engine.zoomPercent);
   const savedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const syncZoom = useCallback(() => {
-    setZoom(Math.round(editor.getCamera().z * 100));
-  }, [editor]);
+  const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    syncZoom();
-    const unlisten = editor.store.listen(syncZoom);
-    return () => unlisten();
-  }, [editor, syncZoom]);
+    return engine.subscribe(() => setZoom(engine.zoomPercent));
+  }, [engine]);
 
   useEffect(() => {
     return () => {
       if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
     };
   }, []);
 
@@ -46,16 +64,11 @@ export function TopBar({ isDarkMode, onToggleDarkMode, onOpenSettings }: TopBarP
     if (saveStatus === 'saving') return;
     setSaveStatus('saving');
     try {
-      const snapshot = getSnapshot(editor.store);
-      const response = await fetch(`${API_BASE}/api/projects/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          document: snapshot,
-          project_name: documentTitle,
-        }),
+      const projectId = slugFromTitle(documentTitle);
+      await saveProjectToBackend(engine.store, engine.camera, {
+        projectName: documentTitle,
+        projectId,
       });
-      if (!response.ok) throw new Error(`Save failed (${response.status})`);
       setSaveStatus('saved');
       if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
       savedTimeoutRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
@@ -64,7 +77,25 @@ export function TopBar({ isDarkMode, onToggleDarkMode, onOpenSettings }: TopBarP
       if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
       savedTimeoutRef.current = setTimeout(() => setSaveStatus('idle'), 2500);
     }
-  }, [editor, documentTitle, saveStatus]);
+  }, [engine, documentTitle, saveStatus]);
+
+  const handleLoadProject = useCallback(async () => {
+    if (loadStatus === 'loading') return;
+    setLoadStatus('loading');
+    try {
+      const projectId = slugFromTitle(documentTitle);
+      const result = await loadProjectFromBackend(projectId);
+      engine.loadWorldDocument(result.document);
+      setDocumentTitle(result.projectName);
+      setLoadStatus('loaded');
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = setTimeout(() => setLoadStatus('idle'), 2000);
+    } catch {
+      setLoadStatus('error');
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = setTimeout(() => setLoadStatus('idle'), 2500);
+    }
+  }, [engine, documentTitle, loadStatus]);
 
   const saveLabel =
     saveStatus === 'saving'
@@ -75,8 +106,20 @@ export function TopBar({ isDarkMode, onToggleDarkMode, onOpenSettings }: TopBarP
           ? 'Save failed'
           : 'Save Project';
 
+  const loadLabel =
+    loadStatus === 'loading'
+      ? 'Loading…'
+      : loadStatus === 'loaded'
+        ? 'Loaded!'
+        : loadStatus === 'error'
+          ? 'Load failed'
+          : 'Open Project';
+
   const SaveIcon =
     saveStatus === 'saving' ? Loader2 : saveStatus === 'saved' ? Check : Save;
+
+  const LoadIcon =
+    loadStatus === 'loading' ? Loader2 : loadStatus === 'loaded' ? Check : FolderOpen;
 
   return (
     <div className="w-full flex flex-wrap items-center justify-center gap-3">
@@ -169,6 +212,28 @@ export function TopBar({ isDarkMode, onToggleDarkMode, onOpenSettings }: TopBarP
                   />
                   {saveLabel}
                 </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  className={chrome.dropdownItem}
+                  disabled={loadStatus === 'loading'}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    void handleLoadProject();
+                  }}
+                >
+                  <LoadIcon
+                    size={16}
+                    className={
+                      loadStatus === 'loading'
+                        ? 'text-zinc-500 animate-spin'
+                        : loadStatus === 'loaded'
+                          ? 'text-emerald-400'
+                          : loadStatus === 'error'
+                            ? 'text-red-400'
+                            : 'text-zinc-500'
+                    }
+                  />
+                  {loadLabel}
+                </DropdownMenu.Item>
                 <ExportMenuItems documentTitle={documentTitle} isDarkMode={isDarkMode} />
                 <DropdownMenu.Separator className="h-px bg-white/[0.06] my-1.5 mx-1" />
                 <DropdownMenu.Item className={chrome.dropdownItem} onSelect={onOpenSettings}>
@@ -178,6 +243,7 @@ export function TopBar({ isDarkMode, onToggleDarkMode, onOpenSettings }: TopBarP
                 <DropdownMenu.Separator className="h-px bg-white/[0.06] my-1.5 mx-1" />
                 <DropdownMenu.Item
                   className={`${chrome.dropdownItem} text-red-400/90 hover:text-red-300 hover:bg-red-500/10`}
+                  onSelect={() => engine.clearCanvas()}
                 >
                   <Trash2 size={16} />
                   Clear Canvas
@@ -200,7 +266,7 @@ export function TopBar({ isDarkMode, onToggleDarkMode, onOpenSettings }: TopBarP
         />
         <Switch.Root
           checked={isDarkMode}
-          onCheckedChange={onToggleDarkMode}
+          onCheckedChange={onDarkModeChange}
           className="w-11 h-6 bg-zinc-800 rounded-full relative border border-white/[0.08] data-[state=checked]:bg-zinc-700 transition-colors"
         >
           <Switch.Thumb className="block w-[18px] h-[18px] bg-white rounded-full shadow-md transition-transform translate-x-0.5 data-[state=checked]:translate-x-[22px]" />
@@ -214,7 +280,7 @@ export function TopBar({ isDarkMode, onToggleDarkMode, onOpenSettings }: TopBarP
 
         <button
           type="button"
-          onClick={() => editor.zoomOut()}
+          onClick={() => engine.zoomOut()}
           className={chrome.iconBtn}
           aria-label="Zoom out"
         >
@@ -225,7 +291,7 @@ export function TopBar({ isDarkMode, onToggleDarkMode, onOpenSettings }: TopBarP
         </span>
         <button
           type="button"
-          onClick={() => editor.zoomIn()}
+          onClick={() => engine.zoomIn()}
           className={chrome.iconBtn}
           aria-label="Zoom in"
         >

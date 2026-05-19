@@ -1,555 +1,561 @@
 # DVAMOCLES SWORD™ — Spatial Cognitive Runtime Migration Plan
 
-**Status:** Planning only — **no application code changes until human approval of this document.**  
-**Target architecture:** PixiJS (WebGL) canvas runtime · Yjs (CRDT + `UndoManager`) · strict plugin/add-on registries · FastAPI modular backend.  
-**Source of truth:** `docs/dvamocles_sword_master_architecture_guidelines_cursor.md`, `docs/Capitolo 3_ Architettura di Estendibilità per l'Ec (1).md`, `docs/ChatGPT-Analisi stato attuale MVP.md`  
-*(Note: guidelines live under `docs/`; rename or symlink to `_docs/` if desired for tooling.)*
+**Document version:** `2.0-audit` (Principal Architect cross-reference audit)  
+**Last audited:** 2026-05-19  
+**Sources:** `docs/dvamocles_sword_master_architecture_guidelines_cursor.md`, `docs/Capitolo 3_ Architettura di Estendibilità per l'Ec (1).md`, `docs/ChatGPT-Analisi stato attuale MVP.md`, `ui figma new/Modular UI for DVAMOCLES SWORD/`, live codebase `frontend/` + `backend/`
+
+> **Audit finding:** The repository has **already executed Phases 1–7 in code** (Pixi engine, Yjs, plugins, culling/LOD, persistence/migrator). This plan is rewritten to reconcile **as-built reality**, **remaining gaps**, and **Phase 0 pre-flight fixes** that must pass before any new phase work or release.
 
 ---
 
 ## 0. Executive Summary
 
-The current MVP is a **well-decoupled React chrome layer** wrapped around **tldraw v5** (`hideUi` + `useEditor`). That separation is the primary salvage asset. The migration is not a UI rewrite; it is an **engine replacement** plus **data-model and persistence realignment** toward a **data-oriented, viewport-driven, plugin-first Spatial Cognitive Runtime**.
-
-**Non-negotiable architectural law (from Master Guidelines):**
+### 0.1 Architectural law (unchanged)
 
 ```txt
 React UI  ≠  Canvas Runtime  ≠  World Data Model  ≠  AI Runtime
 ```
 
-**End-state stack (target):**
+### 0.2 Target stack (locked versions — verify in `frontend/package.json`)
 
-| Layer | Technology |
-|-------|------------|
-| UI | React 19 + Vite + Radix + Tailwind (existing floating cards) |
-| Canvas runtime | PixiJS 8 + `pixi-viewport` + imperative render loop |
-| World state | Yjs document (`Y.Map` entities) + action/delta history |
-| Spatial systems | Spatial hash (hot updates) + Quadtree (viewport culling) |
-| Sketch strokes | `roughjs` / Perfect Freehand pipeline on GPU paths |
-| Backend | FastAPI + pathlib JSON today → snapshots + incremental deltas |
-| Extensibility | `frontend/src/plugins/*` manifests + `backend/modules/*` routers |
+| Layer | Package | Pinned / resolved | Notes |
+|-------|---------|-------------------|--------|
+| UI | `react` / `react-dom` | **^19.2.6** | Figma export targets React **18.3.1** — do not downgrade; port Figma components, do not copy `package.json` wholesale |
+| Build | `vite` | **^8.0.12** | Figma export uses Vite **6.3.5** — incompatible; keep app on Vite 8 |
+| Language | `typescript` | **~6.0.2** | Stricter than TS 5.x; `verbatimModuleSyntax`, `erasableSyntaxOnly`, `noUnusedLocals` enabled |
+| Canvas | `pixi.js` | **^8.9.1** | WebGL via Pixi v8 Application API (`await app.init`) |
+| Viewport | `pixi-viewport` | **^6.0.3** | Declared compatible with Pixi 8; pin and smoke-test pan/wheel after every Pixi bump |
+| CRDT | `yjs` | **^13.6.27** | No peer conflict with React; use `Y.UndoManager` tracked origins (implemented) |
+| Sketch | `roughjs` | **^4.6.6** | Installed; sketch path uses custom `sketchStroke.ts` + sloppiness flag — RoughJS wiring still optional |
+| Styling | `tailwindcss` + `@tailwindcss/vite` | **^4.3.0** | Align tokens with Figma `theme.css` deliberately, not automatically |
+| Backend | FastAPI + stdlib `json` | `backend/main.py` | `POST /api/save`, `GET /api/load` + project aliases |
 
----
+### 0.3 As-built inventory (what exists today)
 
-## 1. Current State Inventory (Baseline)
+| Capability | Location | Status |
+|------------|----------|--------|
+| Pixi canvas + viewport | `frontend/src/components/canvas/SpatialCanvas.tsx` | **Done** |
+| Engine bridge | `frontend/src/engine/EngineContext.tsx` | **Done** (TS errors remain) |
+| Yjs store + undo | `frontend/src/lib/state/StoreManager.ts` | **Done** |
+| Schema v3 + entities | `frontend/src/lib/state/schema.ts` | **Done** |
+| Tools + input FSM | `frontend/src/engine/input/CanvasInputController.ts` | **Partial** (type errors, text entity incomplete) |
+| Document nodes (HTML overlay) | `frontend/src/engine/document/DocumentOverlayManager.ts` | **Done** (anchor math weak — see §4) |
+| Spatial links | `frontend/src/lib/spatial/linkAnchorResolver.ts`, `SpatialLinksLayer.ts` | **Partial** (approximate layout) |
+| Plugin registry | `frontend/src/plugins/pluginRegistry.ts` | **Done** |
+| Backend plugins | `backend/modules/loader.py` | **Done** (`/api/plugins/{name}`) |
+| Viewport culling + LOD | `frontend/src/engine/render/RenderManager.ts` | **Done** |
+| Persistence + tldraw migrator | `canvasPersistence.ts`, `legacyMigrator.ts` | **Done** |
+| tldraw runtime | — | **Removed** from `package.json` ✓ |
+| `npm run build` (`tsc -b && vite build`) | — | **FAILS** (29+ TS errors) |
+| `npx vite build` only | — | **Passes** (typecheck bypassed) |
 
-### 1.1 What exists today
+### 0.4 Critical contradiction resolved
 
-| Area | Location | Role |
-|------|----------|------|
-| App shell | `frontend/src/App.tsx` | `<Tldraw hideUi>` + flex overlay (TopBar, sidebars, toolbar, minimap) |
-| Toolbar | `frontend/src/hooks/useToolbarTools.ts`, `BottomToolbar.tsx` | Tools bound to `editor.setCurrentTool` |
-| Properties | `frontend/src/hooks/usePropertiesPanel.ts`, `RightSidebar.tsx` | tldraw `Default*Style` props |
-| tldraw adapters | `frontend/src/lib/tldraw/*` | `applyStyle`, sketchy dash/font, export, import, lined paper |
-| Minimap | `frontend/src/components/ui/CanvasMinimap.tsx` | 2D canvas radar via `getShapeMaskedPageBounds` |
-| Persistence | `backend/main.py` | `POST /api/projects/save`, `GET /api/projects/{id}` — **tldraw snapshot JSON** |
-| Launcher | `run.py` | Vite + Uvicorn |
-| Design tokens | `frontend/src/components/ui/chrome.tsx`, `panel.tsx`, `styles/*` | Glassmorphism chrome |
+| Old plan statement | Reality |
+|--------------------|---------|
+| “Planning only — no code until approval” | Code migration **already landed** |
+| “Phase 1 = remove tldraw” | **Already removed** |
+| “Phase 6 = persistence” | **`canvasPersistence.ts` + `/api/save` exist** |
+| “Phase 5 = culling first” | **RenderManager shipped before formal doc update** |
 
-### 1.2 Critical coupling points (migration risk)
-
-1. **`useEditor()` must exist inside `<Tldraw>`** — all chrome hooks depend on tldraw context.
-2. **Save payload** — `document: getSnapshot(editor.store)` is tldraw-native; backend `SaveProjectPayload.document` is typed as opaque `dict` but semantically tldraw.
-3. **Tool/shape semantics** — geo tools, `line`, `draw`, `arrow`, groups with `meta.schemaName` are tldraw shape types.
-4. **Style system** — `TLDefaultColorStyle` enum (12 colors); properties panel is correct for tldraw, not yet engine-agnostic.
-5. **`roughjs` is installed but sketchy is implemented via tldraw `DefaultDashStyle: 'draw'`**, not custom RoughJS rendering.
-
----
-
-## 2. Salvage & Purge Strategy
-
-### 2.1 KEEP (salvage — refactor imports/paths only)
-
-#### React floating UI (high reuse ~90–95%)
-
-| Path | Notes |
-|------|--------|
-| `frontend/src/App.tsx` | **Layout shell only** — remove `<Tldraw>`; mount `CanvasHost` + existing flex chrome |
-| `frontend/src/components/TopBar.tsx` | Save/export/settings; rewire save to world-state serializer |
-| `frontend/src/components/LeftSidebar.tsx` | Outline + import UX; rewire to `WorldStore` / group entities |
-| `frontend/src/components/RightSidebar.tsx` | Property cards layout |
-| `frontend/src/components/BottomToolbar.tsx` | Button chrome; tools driven by `ToolRegistry` |
-| `frontend/src/components/SettingsModal.tsx` | App settings (non-canvas) |
-| `frontend/src/components/ExportMenu.tsx` | Export triggers; reimplement via Pixi export pipeline |
-| `frontend/src/components/ui/CanvasMinimap.tsx` | **Concept salvage** — rebind to `CameraController` + spatial index bounds |
-| `frontend/src/components/ui/chrome.tsx` | Design tokens |
-| `frontend/src/components/ui/panel.tsx` | `FloatingCard`, `PropertyCard` |
-| `frontend/src/components/ui/utils.ts` | `cn()` |
-| `frontend/src/components/properties/sections/*` | UI controls; replace tldraw types with engine style contracts |
-| `frontend/src/components/properties/sectionStyles.ts` | Toggle/label classes |
-| `frontend/src/components/properties/tldrawColors.ts` | **Rename** → `enginePalette.ts`; keep 12 enum swatches |
-| `frontend/src/styles/*` | Global CSS, Tailwind, fonts |
-| `frontend/index.html` | Entry |
-| `frontend/vite.config.ts` | HMR + build |
-| `frontend/src/main.tsx` | Bootstrap |
-
-#### Property section files to keep as UI (logic rewired)
-
-- `ColorPickerSection.tsx`, `FillStyleSection.tsx`, `StrokeStyleSection.tsx`, `StrokeWidthSection.tsx`, `SloppinessSection.tsx`, `OpacitySection.tsx`, `AlignmentSection.tsx`, `ObjectIdSection.tsx`
-
-#### Backend & ops (high reuse ~85–100%)
-
-| Path | Notes |
-|------|--------|
-| `backend/main.py` | Core routes, CORS, pathlib safety — **evolve payload schema** |
-| `backend/data/projects/*` | Existing files = migration input (tldraw → DVAMOCLES format) |
-| `run.py` | Unchanged |
-| `README.md` | Update after phases |
-
-#### Libraries to keep or add (not in MVP yet)
-
-| Package | Role |
-|---------|------|
-| `roughjs` | Sketchy stroke rendering in Pixi layer |
-| **Add:** `pixi.js`, `pixi-viewport`, `yjs`, `zustand` (or keep minimal custom store), `rbush` (spatial index) | Per architecture docs |
-| **Optional later:** `perfect-freehand`, `gl-matrix` | Stroke + camera math |
+**New rule:** Treat **Phase 0** below as a **hard gate**. No feature phase is “complete” until Phase 0 CI green.
 
 ---
 
-### 2.2 PURGE (remove after replacement exists)
+## Phase 0 — Pre-Flight Safety Fixes (MANDATORY GATE)
 
-#### npm dependencies
+**Goal:** Make the as-built engine **compile-clean**, **visually aligned with Figma chrome**, and **safe for spatial-link math** before any new feature work.
 
-| Package | Reason |
-|---------|--------|
-| `tldraw` | License + architectural lock-in; full removal in Phase 1 |
+**Estimated effort:** 1–2 days.
 
-#### Delete files (engine-specific)
+### 0.1 Dependency & type collision audit
 
-| Path | Reason |
-|------|--------|
-| `frontend/src/lib/tldraw/applyStyle.ts` | tldraw `StyleProp` API |
-| `frontend/src/lib/tldraw/applySketchyStyle.ts` | tldraw dash/font only |
-| `frontend/src/lib/tldraw/createLinedPaper.ts` | tldraw `createShapes` / `groupShapes` |
-| `frontend/src/lib/tldraw/importFiles.ts` | tldraw `putExternalContent` |
-| `frontend/src/lib/tldraw/exportDocument.ts` | `editor.toImage` / `getSvgString` |
-| `frontend/src/lib/tldraw/createBranch.ts` | Already removed from product; delete if still present |
+#### 0.1.1 Verified compatible (no action unless bumping)
 
-#### Delete or hollow out (after UI rewired)
+- **Pixi 8 + pixi-viewport 6:** Used in `SpatialCanvas.tsx` with `Viewport({ events: app.renderer.events })` — correct v8 pattern.
+- **Yjs + React 19:** Store lives outside React render; `EngineContext` subscribes coarsely — OK.
+- **Radix + React 19:** Already in use across TopBar, Settings, toolbar.
 
-| Path | Reason |
-|------|--------|
-| `frontend/src/hooks/useToolbarTools.ts` | Replace with `engine/tools/useToolController.ts` + registry |
-| `frontend/src/hooks/usePropertiesPanel.ts` | Replace with `engine/hooks/useSelectionStyles.ts` subscribing to world store |
-| `frontend/src/components/ColorPickerPopover.tsx` | Superseded by palette-only popover in Phase 3/4 |
-| `frontend/src/components/DvamoclesOverlay.tsx` | Redundant if layout lives in `App.tsx` |
-| `frontend/src/components/TopLeftMenu.tsx` | Deprecated re-export |
-| `frontend/src/components/TopRightStatus.tsx` | Stub; merged into TopBar |
-| `frontend/src/components/ProjectNavigation.tsx` | Re-export stub |
-| `frontend/src/components/ImportAssets.tsx` | Stub |
-| `frontend/src/components/FloatingToolbar.tsx` | Re-export stub |
-| `frontend/src/components/PropertiesPanel.tsx` | Barrel only |
-| `frontend/src/components/properties/PropertiesPanel.tsx` | Barrel only |
+#### 0.1.2 Active risks
 
-#### Remove from App / build
+| Risk | Evidence | Mitigation |
+|------|----------|------------|
+| **TypeScript 6 + strict flags** | `tsconfig.app.json`: `noUnusedLocals`, `verbatimModuleSyntax`, `erasableSyntaxOnly` | Fix or explicitly suppress per-file only after justification |
+| **Pixi patch drift** | Minor API differences (`Graphics` stroke, `Application.init`) | Lock versions in `package.json`; add `engines` field; document upgrade playbook |
+| **Figma folder ≠ app deps** | Figma: React 18, Vite 6, MUI, cmdk, recharts, etc. | **Never merge** Figma `package.json`; port **components + CSS tokens** only |
+| **`npm run build` ≠ `vite build`** | `npm run build` runs `tsc -b` first and **fails** | Phase 0 must green `tsc -b` |
 
-- `import 'tldraw/tldraw.css'`
-- Any `@tldraw/*` transitive imports
-- CSS rule `.tl-watermark_logo` (no longer needed)
+#### 0.1.3 Exact version policy (add to `frontend/package.json` comments or `engines`)
 
-#### Optional cleanup (non-blocking, Phase 1b)
+```json
+{
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "pixi.js": "^8.9.1",
+    "pixi-viewport": "^6.0.3",
+    "yjs": "^13.6.27",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  }
+}
+```
 
-Unused shadcn scaffolding under `frontend/src/components/ui/` (`calendar`, `chart`, `command`, etc.) — **47+ files** with missing peer deps; safe to delete or move to `ui/_archive/` to fix `tsc -b`.
+After any `pixi.js` upgrade: run pan/zoom wheel test, PNG export, and document overlay sync.
+
+### 0.2 Figma UI integration gaps (`ui figma new/`)
+
+**Reference layout (Figma export):**
+
+| Element | Figma positioning | Current app (`App.tsx`) | Gap |
+|---------|-------------------|-------------------------|-----|
+| Canvas | `absolute inset-0` placeholder, no z-index | `SpatialCanvas` `z-0` full screen | OK structurally |
+| TopBar | `fixed top-6 left-1/2 z-50` | Flex header inside `z-50` overlay | OK; verify vertical offset matches `top-24` sidebars |
+| Sidebars | `fixed left/right-6 top-24 z-40` | Flex columns `max-h-[calc(100vh-140px)]` | **Different layout model** — flex center spacer vs fixed side rails |
+| Bottom toolbar | `fixed bottom-8 z-50` | Footer flex center | OK |
+| Settings modal | `z-[100]` / `z-[101]` | `z-50` relative | **Modal may render under overlay** — raise to `z-[100]` |
+| Theme | `src/styles/theme.css` (oklch) | `frontend/src/styles/theme.css` | Diff tokens — run visual diff |
+
+#### 0.2.1 Required Phase 0 UI setup (prevent clipping / wheel steal)
+
+1. **Z-index contract** (document in `frontend/src/styles/index.css`):
+
+   ```txt
+   z-0   : Pixi canvas (SpatialCanvas root)
+   z-2   : Document HTML overlay (.dv-document-overlay-root) — inside canvas container
+   z-1   : Ambient gradient (pointer-events-none)
+   z-40  : Sidebars (if switched to fixed Figma layout)
+   z-50  : TopBar, BottomToolbar, Minimap
+   z-100 : Modals (Settings, dialogs)
+   ```
+
+2. **Pointer-events contract** (already partially applied):
+
+   - Outer chrome: `pointer-events-none` container + `pointer-events-auto` on interactive children.
+   - Pixi viewport: `touch-action: none` on canvas (present).
+   - Document shell: `pointer-events: auto` only when not in greeked LOD mode (implemented in `DocumentOverlayManager`).
+
+3. **Wheel routing:** Ensure `pixi-viewport` wheel plugin does not scroll page when cursor over sidebars — test with `overscroll-behavior: none` on `html, body` (add if missing).
+
+4. **Token merge checklist:** Copy from Figma → app only:
+
+   - `--font-*`, glass card borders, `#2F80ED` accent (already used in chrome)
+   - Do **not** import MUI / emotion from Figma package
+
+5. **Layout decision (pick one in Phase 0):**
+
+   - **Option A (keep flex):** Retain current flex shell; tune `top-24` / `140px` offsets to match Figma spacing.
+   - **Option B (Figma-fixed):** Refactor `App.tsx` to `fixed` sidebars like Figma; keep center as dead zone for canvas.
+
+### 0.3 Build system validation & cleanup routine
+
+**Current failure:** `npm run build` → `tsc -b` reports errors in:
+
+- Orphan **shadcn** stubs: `calendar`, `carousel`, `chart`, `command`, `drawer`, `form`, `input-otp`, `resizable`, `sidebar`, `sonner` — missing `react-day-picker`, `embla-carousel-react`, `recharts`, `cmdk`, `vaul`, `react-hook-form`, `input-otp`, `react-resizable-panels`, `next-themes`, `sonner`
+- **Engine:** `EngineContext.tsx` (`refreshDocumentLayers` undefined, unused import)
+- **SpatialCanvas:** bridge signature mismatch, `destroy` on chrome handle, `applyGesturePreview` return type
+- **CanvasInputController:** `DocumentNodeEntity` required fields, `BoardEntityPatch` missing `endX`/`endY`
+- **usePluginPropertyPanels:** references `engine.revision` not exposed on context
+
+#### 0.3.1 Step-by-step cleanup (execute in order)
+
+| Step | Action | Verification |
+|------|--------|--------------|
+| 1 | Create `frontend/src/components/ui/_archive/` | Folder exists |
+| 2 | Move unused shadcn files (list above) to `_archive/` **or** delete | `rg "from './ui/calendar" src` → no matches |
+| 3 | Update `tsconfig.app.json`: `"exclude": ["src/components/ui/_archive"]` | `tsc -b` no missing module errors from ui |
+| 4 | Fix engine TS errors (see §0.4) | `tsc -b` engine clean |
+| 5 | Run `npm run lint` and fix blocking issues | ESLint pass |
+| 6 | Run `npm run build` | Full green |
+| 7 | Add CI script: `npm run build` on PR | Prevents regression |
+
+**Alternative (not recommended):** Install all missing peer deps — bloats bundle for unused UI.
+
+#### 0.3.2 `tsconfig.app.json` recommended exclusions
+
+```json
+{
+  "include": ["src"],
+  "exclude": [
+    "src/components/ui/_archive",
+    "src/**/*.test.ts"
+  ]
+}
+```
+
+Keep `noUnusedLocals: true` — forces dead code removal.
+
+### 0.4 Phase 0 engineering fixes (explicit file targets)
+
+| File | Issue | Fix specification |
+|------|-------|-------------------|
+| `EngineContext.tsx` | `refreshDocumentLayers` called but not in context | Implement wrapper calling `documentLayersRef.current?.syncAll()` or remove call |
+| `EngineContext.tsx` | `exportEntitiesToSvg` unused | Remove import or wire to export menu |
+| `SpatialCanvas.tsx` | `appendFreehandPoints` bridge arity | Match `CanvasInputBridge` type to 3-arg engine API |
+| `DocumentChromeLayer.ts` | Handle type missing `destroy` | Return `destroy` from `mountDocumentChromeLayer` |
+| `CanvasInputController.ts` | Text tool creates incomplete `document` entity | Use `createDocumentNode` helper with `title`, `plainText`, `blocks`, `scrollY` |
+| `schema.ts` / patch types | `endX`/`endY` not on `BoardEntityPatch` | Extend patch union for line/arrow |
+| `usePluginPropertyPanels.ts` | `engine.revision` | Expose `revision` on `EngineContextValue` or subscribe via `engine.subscribe` only |
+| `EntityLayer.ts` | Unused `visibleIds` | Remove or use |
+| `canvasExport.ts` | Pixi API type mismatches | Align with Pixi 8 `extract` options |
+
+### 0.5 Phase 0 testing checkpoint
+
+- [ ] `npm run build` exits 0 (not only `vite build`)
+- [ ] App boots: pan/zoom 60 FPS empty + 1k rectangles
+- [ ] Save → Load round-trip (`/api/save`, `/api/load`) on DVAMOCLES schema
+- [ ] Load legacy `backend/data/projects/untitled-project-1.json` (tldraw shell) without crash
+- [ ] Sidebars scroll inside `max-h-[calc(100vh-140px)]`; no clipping at 1080p / 1440p
+- [ ] Settings modal above all chrome (z-index)
+- [ ] Document overlay receives wheel only when hovered (no page scroll bleed)
 
 ---
 
-### 2.3 MIGRATE (transform, do not delete blindly)
+## 1. Salvage & Purge Strategy (updated)
 
-| Asset | Migration action |
-|-------|------------------|
-| `CanvasMinimap.tsx` | Read bounds from `SpatialIndex` + `CameraState`, not `editor.getViewportPageBounds()` |
-| `TopBar` save | Serialize `Y.Doc` + metadata; POST same endpoint with versioned schema |
-| `LeftSidebar` outline | Map `group` entities by `meta.schemaName` equivalent in world model |
-| `AlignmentSection` | Call engine `alignEntities` / `distributeEntities` (port of tldraw math) |
-| `backend/data/projects/*.json` | One-time **tldraw → DVAMOCLES** migration script (Phase 6) |
-| `roughjs` | Wire into `SketchStrokeRenderer` (Phase 5 tools) |
+### 1.1 KEEP (current — do not delete)
+
+All paths listed in v1 plan **except** tldraw adapters (already gone). Additionally keep:
+
+- `frontend/src/lib/state/*` (StoreManager, schema, entityCodec, canvasPersistence, legacyMigrator)
+- `frontend/src/engine/**` (render, input, document, plugins integration)
+- `frontend/src/plugins/**`
+- `backend/modules/**`
+
+### 1.2 PURGE (remaining)
+
+| Target | Action |
+|--------|--------|
+| `frontend/src/components/ui/{calendar,carousel,chart,...}` | Archive or delete (Phase 0) |
+| Stub re-exports: `DvamoclesOverlay`, `FloatingToolbar`, `ProjectNavigation`, `ImportAssets`, `TopRightStatus` | Delete if zero imports (`rg`) |
+| `frontend/src/components/properties/tldrawColors.ts` | Rename → `enginePalette.ts` if still present |
+
+### 1.3 DO NOT PURGE (audit correction)
+
+| Target | Reason |
+|--------|--------|
+| `TopLeftMenu.tsx` | Exports persistence + migrator API — keep |
+| `RenderManager.ts` | Production performance path |
+| `legacyMigrator.ts` | Required for old customer projects |
 
 ---
 
-## 3. Target Frontend Architecture (Post-Migration)
+## 2. Target architecture (as-built vs target)
 
 ```txt
 frontend/src/
-├── app/                    # App.tsx, providers
-├── ui/                     # chrome, panels (from components/ui + components/*Bar*)
+├── App.tsx                     # Flex overlay + SpatialCanvas z-0
+├── components/                 # React chrome (TopBar, sidebars, toolbar)
 ├── engine/
-│   ├── pixi/               # Application, viewport, layers
-│   ├── camera/             # pan/zoom, world ↔ screen
-│   ├── world/              # entity store, Yjs binding
-│   ├── spatial/            # hash grid + quadtree + RBush queries
-│   ├── render/             # LOD, batching, layer compositor
-│   ├── input/              # pointer, keyboard, tool routing
-│   ├── history/            # Y.UndoManager + action log adapter
-│   └── tools/              # select, pan, line, draw, geo, eraser, …
-├── registry/
-│   ├── pluginRegistry.ts   # import.meta.glob manifests
-│   ├── toolRegistry.ts
-│   ├── shapeRegistry.ts
-│   └── panelRegistry.ts
-├── plugins/                # drop-in extensions (empty until Phase 4)
-├── contracts/              # TypeScript types shared by UI + engine
-└── bridge/                 # React ↔ engine event bus (no React in render loop)
-```
+│   ├── EngineContext.tsx       # Bridge (store exposed)
+│   ├── infiniteGrid.ts
+│   ├── input/                  # CanvasInputController, hitTest, file drop
+│   ├── render/                 # EntityLayer, RenderManager, LOD, Preview
+│   └── document/               # Chrome + HTML overlay
+├── lib/
+│   ├── state/                  # Yjs StoreManager, schema v3
+│   ├── spatial/                # Hash grid, bounds, link anchors
+│   └── document/               # layoutDocumentNode (approximate)
+├── plugins/                    # manifest glob registry
+└── contracts/styles.ts
 
-```txt
 backend/
-├── main.py                 # thin app factory
-├── core/                   # persistence, project IO
-├── modules/                # addon routers (embeddings, etc.)
-└── migrations/             # tldraw import, schema versions
+├── main.py                     # save/load + CORS
+└── modules/                    # plugin routers
 ```
 
----
+**Not yet implemented (still aligned with master doc):**
 
-## 4. Execution Phases
-
-Each phase is **atomic**: merge only when its testing checkpoint passes. Do not start Phase N+1 until N is green.
-
----
-
-### Phase 0 — Migration Branch & Contracts (1–2 days)
-
-**Goal:** Freeze contracts so UI and engine teams (or sequential prompts) do not diverge.
-
-**Deliverables:**
-
-- `contracts/entity.ts` — `EntityId`, `EntityType`, bounds, style bag, `meta`
-- `contracts/world-document.ts` — schema version, snapshot + delta envelope
-- `contracts/engine-events.ts` — `selectionChanged`, `cameraChanged`, `documentChanged`, `toolChanged`
-- `MIGRATION_BRANCH` + feature flag `VITE_ENGINE=legacy|pixi` (optional short-lived)
-
-**Testing checkpoint:**
-
-- [ ] Contracts compile with `tsc --noEmit`
-- [ ] No runtime change; tldraw MVP still runs on `main` / flag `legacy`
+- `rbush` / dedicated quadtree package (hash grid used instead)
+- `engine/history/HistoryController.ts` as separate module (logic inside StoreManager)
+- Backend append-only delta log (snapshots only today)
+- AI/RAG runtime (forbidden until performance + persistence gates green per master §15)
 
 ---
 
-### Phase 1 — Dependency Purge & Engine Swap (PixiJS + WebGL Init)
+## 3. Spatial text mapping — edge cases & Phase 4 mitigation
 
-**Goal:** Replace `<Tldraw>` with a Pixi canvas that fills the viewport; chrome remains visible but **disconnected** from canvas (read-only mock selection OK).
+### 3.1 Problem statement (audit)
 
-**Work:**
+Current pipeline:
 
-1. Add dependencies: `pixi.js`, `pixi-viewport` (and types if needed).
-2. Create `engine/pixi/CanvasHost.tsx` — mounts full-screen WebGL canvas inside current `App.tsx` flex shell (center spacer).
-3. Implement `CameraController` via `pixi-viewport` (pan, wheel zoom, clamp sensible zoom limits).
-4. Render layers: `backgroundGrid`, `worldContainer`, `overlayContainer` (empty).
-5. Remove `tldraw` from `package.json`; delete `lib/tldraw/*` and tldraw CSS import.
-6. Stub `engine/bridge/EngineProvider.tsx` — React context exposing camera + event emitter (no Yjs yet).
+1. **Rendering:** Real HTML in `DocumentOverlayManager` (`.dv-document-body`) with CSS wrap.
+2. **Layout model:** `layoutDocumentNode()` in `documentLayout.ts` uses **heuristic** wrap (`fontSize * 0.55` per char) — **not identical** to browser layout.
+3. **Link anchors:** `charRangeToWorldRect()` → `resolveSourceAnchor()` → Bézier in `linkAnchorResolver.ts`.
 
-**Testing checkpoint:**
+**Failure modes:**
 
-- [ ] App boots with no tldraw in bundle (`npm run build` succeeds)
-- [ ] 60 FPS empty pan/zoom on grid
-- [ ] Floating UI still lays out (TopBar, sidebars, toolbar) without overlap clipping
-- [ ] No `useEditor` imports remain in `src/`
-- [ ] HMR stable on Windows (`vite.config.ts` clientPort 5173)
+| Event | Symptom |
+|-------|---------|
+| Resize document width | HTML reflow changes line breaks; `charRange` still valid in `plainText` but **pixel anchor drifts** |
+| Scroll `scrollY` | Partially handled in `charRangeToWorldRect` — OK if layout matches DOM |
+| Zoom (LOD greeking) | Links hidden or anchors stale — acceptable if links hidden at low zoom |
+| Edit `plainText` / blocks without relayout | Orphan `charRange` on spatial links |
+| Multi-line selection | `computeSelectionCharRange` fallback in overlay may disagree with layout model |
 
----
+### 3.2 Bulletproof anchor strategy (required for Phase 4 completion)
 
-### Phase 2 — State Management (Yjs + Undo/Redo Stack)
+**Principle:** Persist **`charRange` in plainText** (stable) + compute **pixels from DOM at link-render time** (ephemeral).
 
-**Goal:** Authoritative world model outside React; delta-based history; no full JSON snapshots per stroke.
+#### 3.2.1 Data model additions (`schema.ts`)
 
-**Work:**
+```ts
+interface SpatialLink {
+  id: string;
+  sourceDocumentId: string;
+  charRange: [number, number];     // canonical — never store pixel coords
+  targetShapeId: string;
+  label?: string;
+  anchorVersion?: number;          // bump when document blocks change
+}
+```
 
-1. Add `yjs`; define `Y.Map` structure: `entities`, `relations`, `documentMeta`.
-2. `engine/world/WorldDocument.ts` — bind Yjs ↔ plain TS views for UI.
-3. `engine/history/HistoryController.ts` — `Y.UndoManager` scoped to shape edits; optional action envelope `{ type, before, after }` for persistence (per Master Guidelines §9).
-4. In-memory entity CRUD API: `createEntity`, `updateEntity`, `deleteEntity`, `moveEntity`.
-5. Render **placeholder rectangles** for entities from Yjs (Pixi `Graphics` pool).
-6. Persist locally: `Y.encodeStateAsUpdate` for dev autosave hook (optional).
+On document `blocks` / `plainText` mutation: increment `document.anchorVersion` and emit `links-invalidated`.
 
-**Testing checkpoint:**
+#### 3.2.2 `CharacterAnchorIndex` (new: `frontend/src/lib/document/characterAnchorIndex.ts`)
 
-- [ ] Create/move/delete 1k rectangle entities programmatically — no React re-render per entity
-- [ ] Undo/redo restores position after 50 random moves
-- [ ] Memory stable (no full snapshot array growth per action)
-- [ ] `store.listen` equivalent: UI receives `documentChanged` via bridge only
+**API:**
 
----
+```ts
+interface LayoutGlyphBox {
+  charStart: number;
+  charEnd: number;
+  worldRect: { x: number; y: number; width: number; height: number };
+}
 
-### Phase 3 — UI Re-wiring (React Floating UI ↔ Pixi Event System)
+function measureCharacterBoxes(
+  shell: HTMLElement,           // .dv-document-shell
+  entity: DocumentNodeEntity,
+  viewport: Viewport,
+): LayoutGlyphBox[];
 
-**Goal:** Restore MVP UX: toolbar tools, properties panel, selection, alignment, export hooks — all via **engine contracts**, not tldraw.
+function charRangeToWorldRectDom(
+  entity: DocumentNodeEntity,
+  charRange: [number, number],
+  shell: HTMLElement,
+  viewport: Viewport,
+): CharRangeRect | null;
+```
 
-**Work:**
+**Algorithm (normative):**
 
-1. `bridge/useEngine()` hook — selection, active tool, shared styles, camera.
-2. Rewrite `useToolController` — `setCurrentTool('line'|'draw'|…)` drives input FSM in `engine/input`.
-3. Rewire `usePropertiesPanel` → read/write `StyleBag` on selection + `setDefaultStyle` for next entity.
-4. Implement sketchy as **render flag** (`sketchy: true` → RoughJS path), decoupled from fill.
-5. Rewire `ColorPickerSection` — only `TLDefaultColorStyle` union (12 values); remove hex paths.
-6. `AlignmentSection` → `world.alignEntities(ids, 'left'|'center-horizontal'|…)` port.
-7. `TopBar` save → POST `{ schemaVersion, snapshot, deltas?, project_name }` (backend accepts both during transition).
-8. `CanvasMinimap` → subscribe to `cameraChanged` + spatial index bounds.
+1. Ensure shell is mounted and `display !== none` (temporarily force `visibility:hidden` off-screen if greeked — or skip link draw when LOD greeked).
+2. Walk `plainText` char indices; for each block boundary, map to DOM text nodes via `data-block-id` + `data-plain-start` attributes on block roots.
+3. Use `document.createRange()` + `range.setStart` / `setEnd` on Text nodes.
+4. Call `range.getClientRects()` → union rects.
+5. Convert each client rect → world space:
 
-**Testing checkpoint:**
+   ```ts
+   const tl = viewport.toWorld(clientX - canvasRect.left, clientY - canvasRect.top);
+   ```
 
-- [ ] All toolbar tools activate correct cursor/input mode
-- [ ] Line tool + draw tool both work; line adjacent to pencil in toolbar
-- [ ] Properties apply to selection and next-created shapes
-- [ ] Sketchy toggle affects dash/font only, not fill
-- [ ] Save/load round-trip via FastAPI (new schema)
-- [ ] Minimap panning tracks main viewport
+6. Apply **scroll correction:** add `entity.x/y`, subtract `body.scrollTop` already reflected in client rects if measured inside scrolled body.
 
----
+7. Cache per `(documentId, anchorVersion, scrollY, width, height, zoom)` in `WeakMap` invalidated on overlay `syncAll`.
 
-### Phase 4 — Plugin Registry Implementation
+#### 3.2.3 Resize mitigation
 
-**Goal:** Plugin-first platform per Chapter 3 — zero core imports of feature plugins.
+On `updateEntity` changing `width` / `height` / `blocks`:
 
-**Work:**
+1. Re-run `measureCharacterBoxes` after `requestAnimationFrame` (post-layout).
+2. Do **not** mutate `charRange` — only update rendered link geometry.
+3. Optional: show ghost anchor handles in select tool using same DOM measurement.
 
-1. `registry/pluginRegistry.ts` — `import.meta.glob('../plugins/*/manifest.ts', { eager: true })`.
-2. Registries: `registerTool`, `registerShapeRenderer`, `registerPanel`, `registerCommand`.
-3. `plugins/_example/` — manifest + dummy tool button + inspector panel.
-4. `BottomToolbar` — merge `coreTools` + `pluginTools` from registry.
-5. `RightSidebar` — conditional plugin panels via `panel.condition(selection)`.
-6. Backend: `backend/modules/` + `load_module_routers(app)` pattern from Chapter 3.
-7. Example module: `backend/modules/health_ext/router.py` (proof of auto-mount).
+#### 3.2.4 Fallback when DOM unavailable
 
-**Testing checkpoint:**
+If shell not mounted (export/offscreen): use `layoutDocumentNode()` **but** mark links as `confidence: 'approximate'` in dev overlay.
 
-- [ ] Adding `plugins/hello/manifest.ts` shows new toolbar button **without** editing `App.tsx`
-- [ ] Disabling plugin folder removes tool after rebuild
-- [ ] Backend `/api/modules/hello/...` mounts via folder convention
-- [ ] Invalid manifest fails fast at startup with clear error
+### 3.3 Phase 4 work items (spatial document mapping — expanded)
 
----
+**Status today:** Document drop, overlay, chrome, links — **Partial**.
 
-### Phase 5 — Spatial Document Mapping & Advanced Tools
-
-**Goal:** Performance architecture + differentiated features (not Excalidraw clone).
-
-**Work:**
-
-1. **Spatial hash grid** — O(1) insert/move/remove for drag + hit-test hot path.
-2. **Quadtree** — viewport query + marquee selection.
-3. **Viewport culling** — only visible entities enter render list each frame.
-4. **LOD resolver** — semantic zoom thresholds (e.g. hide text detail < 20% zoom).
-5. **GPU batching** — static `Graphics` batches for grid, edges, geo fills.
-6. **Line tool** — polyline entities with spatial endpoints.
-7. **Draw tool** — freehand → simplified path → entity.
-8. **Lined paper** — composite entity or group template (port from old `createLinedPaper` logic).
-9. **Import assets** — file drop → image entities (textures in Pixi).
-10. **Export** — PNG/SVG via Pixi render texture + vector export path.
-
-**Testing checkpoint:**
-
-- [ ] 5k entities: pan/zoom ≥ 55–60 FPS on mid-range GPU
-- [ ] Viewport shows only culled subset (verify via debug overlay count)
-- [ ] LOD switches at configured zoom thresholds
-- [ ] Export PNG/SVG of selection and full bounds
-- [ ] Spatial hash + quadtree results match brute-force selection on sample set
+| # | Task | Acceptance |
+|---|------|------------|
+| 4.1 | Implement `characterAnchorIndex.ts` per §3.2 | Link endpoints match text within **2px** at 100% zoom after resize |
+| 4.2 | Wire `SpatialLinksLayer` + `linkAnchorResolver` to DOM measurement | Replace `charRangeToWorldRect` heuristic as primary |
+| 4.3 | `blocks` edit invalidation | Changing text bumps `anchorVersion`; links re-sync |
+| 4.4 | Link tool UX | Selection → pending source → target shape (exists); add visual feedback at measured rect |
+| 4.5 | Left sidebar outline | List documents + linked shapes (stub today) |
+| 4.6 | Regression tests | Golden DOM fixture: 3 blocks, resize width 400→200, charRange `[10,25]` stable |
 
 ---
 
-### Phase 6 — Persistence, Migration & Backend Alignment
+## 4. Execution phases (reconciled with as-built)
 
-**Goal:** Production-grade save format; migrate existing tldraw JSON projects.
-
-**Work:**
-
-1. Versioned `DvamoclesDocument` schema (`schemaVersion: 1`).
-2. Backend: snapshots + append-only delta log per project (Master Guidelines §9).
-3. `backend/migrations/tldraw_v5_import.py` — best-effort map tldraw shapes → entities.
-4. Deprecate tldraw-specific field names in OpenAPI models.
-5. README + license section: no tldraw dependency.
-
-**Testing checkpoint:**
-
-- [ ] Load old `untitled-project-1.json` through migrator without crash
-- [ ] Save → reload → visual parity within agreed tolerance
-- [ ] Corrupt file handling unchanged (400/500)
-- [ ] `run.py` still starts full stack
+Phases marked: ✅ Done · 🟡 Partial · ⬜ Not started
 
 ---
 
-## 5. Execution Prompts (Copy-Paste per Phase)
+### Phase 1 — Dependency purge & Pixi engine swap ✅
 
-Use these **verbatim** (adjust paths if branch names differ) when ready to execute. Each assumes `@workspace` and the three `docs/*.md` architecture files.
+**Delivered:** `SpatialCanvas`, `pixi.js` 8, `pixi-viewport`, no tldraw, `EngineProvider`, infinite grid.
+
+**Remaining:** Phase 0 TS/build green; Figma z-index parity.
 
 ---
 
-### Phase 0 prompt
+### Phase 2 — Yjs world state + undo ✅
+
+**Delivered:** `StoreManager`, `Y.Map` entities + spatialLinks, `UndoManager`, gesture origins, `exportWorldDocument` / `importWorldDocument`.
+
+**Remaining:** Optional `encodeStateAsUpdate` for collaboration (future).
+
+---
+
+### Phase 3 — UI re-wire to engine 🟡
+
+**Delivered:** Toolbar, properties, selection, save/load hooks, minimap bound to engine.
+
+**Gaps:**
+
+- `AlignmentSection` — verify engine `alignEntities` exists or stub disabled
+- Text tool — `DocumentNodeEntity` creation incomplete (TS proves gap)
+- Line tool adjacent to draw — OK in toolbar
+
+---
+
+### Phase 4 — Spatial document mapping + link anchors 🟡
+
+See §3.3 — **DOM anchor index is the critical missing piece.**
+
+---
+
+### Phase 5 — Performance (culling, LOD, spatial index) ✅
+
+**Delivered:** `SpatialHashGrid`, `RenderManager`, LOD at zoom < 0.3, lazy entity paint.
+
+**Gaps:**
+
+- Quadtree / `rbush` for marquee selection — not shipped (hash grid only)
+- GPU batching — not explicit; Pixi Graphics per entity
+- Benchmark script — add `scripts/bench-5k.ts` for repeatable FPS
+
+---
+
+### Phase 6 — Plugin registry ✅
+
+**Delivered:** `plugins/*/manifest.ts`, `pluginRegistry.ts`, dynamic toolbar + sidebar panels, `backend/modules` loader.
+
+**Gaps:**
+
+- Document shape type plugins — only core `document` type
+- Plugin security model — trust-all (dev only)
+
+---
+
+### Phase 7 — Persistence & legacy migration ✅
+
+**Delivered:** `serializeCanvasState`, `/api/save`, `/api/load`, `legacyMigrator.ts`, `TopBar` save/open.
+
+**Gaps:**
+
+- Backend **delta log** not implemented (full snapshot only)
+- `schemaVersion` doc says v1 in old prompt but code uses **v3** — document as v3 everywhere
+- Python-side migrator duplicate (optional); client migrator sufficient for now
+
+---
+
+### Phase 8 — Hardening & release ⬜
+
+1. Phase 0 green CI
+2. Spatial anchor DOM pipeline (Phase 4 close-out)
+3. README update (stack, no tldraw, dev commands)
+4. E2E smoke: Playwright pan/zoom/save/load
+5. Performance gate: 5k entities ≥55 FPS on reference GPU
+
+---
+
+## 5. Risk register (expanded)
+
+| ID | Risk | Likelihood | Impact | Mitigation |
+|----|------|------------|--------|------------|
+| R1 | `tsc -b` fails in CI while dev uses `vite` only | **High** | **High** | Phase 0 cleanup §0.3 |
+| R2 | Char-range vs HTML layout drift | **High** | **High** | §3.2 DOM anchor index |
+| R3 | Figma fixed vs flex layout mismatch | Med | Med | Pick layout option §0.2.1; visual QA |
+| R4 | Pixi wheel vs sidebar scroll conflict | Med | Med | `touch-action`, pointer-events audit |
+| R5 | Legacy tldraw migrator incomplete shapes | Med | Med | Expand `legacyMigrator.ts` mapping table; log skipped types |
+| R6 | `npm run build` / TS 6 strictness | Med | Med | Incremental fixes; no `skipLibCheck` abuse |
+| R7 | Document overlay memory (5k docs) | Low | High | Cap DOM shells via culling (display:none off-screen) — partial |
+| R8 | Yjs undo + gesture race | Low | Med | `commitGesture` already transactional — add test |
+| R9 | Plugin manifest XSS / arbitrary code | Low | High | Trust boundary doc; signed plugins later |
+| R10 | Schema v3 breaking old saves | Med | Med | `normalizeProjectPayload` + version field |
+| R11 | No delta persistence — large save payloads | Med | Med | Phase 8 delta log per master §9 |
+| R12 | AI features before perf gate | Med | **Critical** | Master §15 — block until Phase 8 perf checkpoint |
+
+---
+
+## 6. Testing checkpoints (updated)
+
+| Phase | Gate |
+|-------|------|
+| **0** | `npm run build` green; modal z-index; wheel routing; save/load + legacy load |
+| 1 | No tldraw in bundle; 60 FPS pan/zoom |
+| 2 | 1k entities; undo/redo |
+| 3 | All tools; properties; minimap |
+| 4 | DOM anchors ±2px after resize; links track scroll |
+| 5 | 5k entities ≥55 FPS; culled count < total |
+| 6 | Plugin drop-in without `App.tsx` edit |
+| 7 | tldraw JSON migrates; round-trip |
+| 8 | CI + README + E2E |
+
+---
+
+## 7. Execution prompts (revised)
+
+### Phase 0 prompt (run first)
 
 ```txt
-@workspace @docs
+@workspace @docs @MIGRATION_PLAN.md
 
-Act as Principal Architect. Phase 0 ONLY — no engine rewrite yet.
+Execute Phase 0 ONLY: Pre-Flight Safety Fixes.
 
-Create `frontend/src/contracts/` with TypeScript types for:
-- Entity (id, type, transform, bounds, styleBag, meta)
-- WorldDocument (schemaVersion, entities map, relations)
-- Engine events (selectionChanged, cameraChanged, documentChanged, toolChanged)
-- Persistence envelope (snapshot + optional delta[])
-
-Add `frontend/src/contracts/index.ts` barrel. Ensure `npx tsc -p frontend --noEmit` passes for contracts only.
-Do NOT remove tldraw. Do NOT change App.tsx behavior.
-
-Output: new files only + brief CONTRACTS.md in contracts folder.
+1. Archive or delete unused shadcn ui stubs; exclude _archive from tsconfig.
+2. Fix all TypeScript errors so `npm run build` passes (EngineContext, SpatialCanvas, CanvasInputController, patches).
+3. Align Settings modal z-index to z-[100]; document z-index contract in styles.
+4. Expose engine.revision OR fix usePluginPropertyPanels subscription.
+5. Do NOT add features. Verify checklist §0.5.
 ```
 
----
-
-### Phase 1 prompt
+### Phase 4 prompt (spatial anchors)
 
 ```txt
-@workspace @docs
+@workspace @docs @MIGRATION_PLAN.md §3.2
 
-Execute Phase 1: Dependency Purge & PixiJS Engine Swap.
+Implement characterAnchorIndex.ts per MIGRATION_PLAN §3.2.2:
+- DOM Range + getClientRects → world space via viewport.toWorld
+- Wire linkAnchorResolver / SpatialLinksLayer to use DOM measurement
+- Invalidate cache on anchorVersion, scrollY, resize
+- Keep charRange in plainText as canonical
 
-1. Add pixi.js + pixi-viewport. Create `frontend/src/engine/pixi/CanvasHost.tsx` with layered containers (grid, world, overlay) and pixi-viewport camera (pan/zoom).
-2. Replace `<Tldraw>` in App.tsx with `<CanvasHost />`; keep all floating UI (TopBar, LeftSidebar, RightSidebar, BottomToolbar, CanvasMinimap shell).
-3. Remove `tldraw` from package.json; delete `frontend/src/lib/tldraw/`, tldraw CSS import, and ALL `useEditor` usage. Stub `EngineProvider` with camera events only.
-4. Sidebars: ensure `max-h-[calc(100vh-140px)] overflow-y-auto custom-scrollbar pb-6`.
-
-Constraints: NO React rendering per entity. NO Yjs yet. Imperative Pixi loop only.
-
-Verify: vite build, 60fps pan/zoom, no tldraw in bundle.
+Verify: resize document 400→200px, link stays on selected text within 2px.
 ```
 
 ---
 
-### Phase 2 prompt
+## 8. Human review checklist (before declaring migration complete)
 
-```txt
-@workspace @docs
-
-Execute Phase 2: Yjs World State + Undo/Redo.
-
-1. Add yjs. Implement `engine/world/WorldDocument.ts` using Y.Map for entities.
-2. Implement `engine/history/HistoryController.ts` with Y.UndoManager; document action shape { type, before, after } for future persistence.
-3. Render each entity as a Pixi Graphics placeholder from Yjs data (data-oriented, not React components).
-4. Expose CRUD + undo/redo on `EngineProvider`.
-
-Constraints: React must subscribe only to coarse events, not per-entity state. No full JSON snapshots on each pointer move.
-
-Verify: 1k entities, undo/redo after 50 moves, DevTools memory stable.
-```
+- [ ] Phase 0 CI green (`npm run build`)
+- [ ] DOM anchor strategy approved (§3.2)
+- [ ] Figma layout option chosen (flex vs fixed)
+- [ ] Schema version **3** documented in README + API
+- [ ] Legacy tldraw projects: acceptable loss list for unmigrated shape types
+- [ ] Performance gate measured (5k entities)
+- [ ] AI/RAG remains out of scope until Phase 8
 
 ---
 
-### Phase 3 prompt
+## 9. Appendix — file cross-reference index
 
-```txt
-@workspace @docs
-
-Execute Phase 3: Re-wire React Floating UI to Engine Event Bus.
-
-Rewire without tldraw:
-- useToolController: select, pan, geo, arrow, draw, line, text, eraser (NO note, NO branch). Line tool adjacent to draw.
-- usePropertiesPanel: StyleBag + 12 TLDefaultColorStyle colors only (remove hex picker).
-- Sketchy: render flag only (dash sketchy), fill independent.
-- AlignmentSection: align/distribute via world store.
-- TopBar save: http://127.0.0.1:8000 with new schemaVersion + encoded world snapshot.
-- CanvasMinimap: camera + spatial bounds from engine.
-
-Keep modular flex layout in App.tsx. Do not reintroduce tldraw.
-
-Verify full MVP parity checklist from MIGRATION_PLAN.md Phase 3.
-```
+| Concern | Primary files |
+|---------|----------------|
+| Canvas runtime | `SpatialCanvas.tsx`, `EntityLayer.ts`, `RenderManager.ts` |
+| State | `StoreManager.ts`, `schema.ts`, `entityCodec.ts` |
+| Persistence | `canvasPersistence.ts`, `backend/main.py` |
+| Legacy | `legacyMigrator.ts`, `backend/data/projects/*.json` |
+| Plugins | `pluginRegistry.ts`, `backend/modules/loader.py` |
+| Document text | `DocumentOverlayManager.ts`, `documentLayout.ts`, `linkAnchorResolver.ts` |
+| Figma reference | `ui figma new/Modular UI for DVAMOCLES SWORD/src/app/**` |
+| Build | `tsconfig.app.json`, `eslint.config.js`, `package.json` |
 
 ---
 
-### Phase 4 prompt
-
-```txt
-@workspace @docs
-
-Execute Phase 4: Plugin Registry (frontend + backend).
-
-Frontend:
-- `registry/pluginRegistry.ts` via import.meta.glob on `plugins/*/manifest.ts`
-- Registries: tools, shapes, panels, commands
-- Example plugin `plugins/example/` adding a toolbar button + property panel section
-- BottomToolbar + RightSidebar consume registries (core MUST NOT import plugins directly)
-
-Backend:
-- `backend/modules/<name>/router.py` auto-loaded by `load_module_routers`
-- Example module mounted at `/api/modules/example`
-
-Verify: new plugin appears without editing App.tsx; backend route responds.
-```
-
----
-
-### Phase 5 prompt
-
-```txt
-@workspace @docs
-
-Execute Phase 5: Spatial Indexing, Culling, LOD, Batching, Advanced Tools.
-
-Implement:
-1. Spatial hash grid (insert/remove/query O(1) average) for drag + hit-test.
-2. Quadtree for viewport culling and marquee selection.
-3. LOD resolver: semantic zoom (e.g. simplify/hide labels below 20% zoom).
-4. GPU batching for grid + static edges.
-5. Line tool (straight polyline entities), draw tool (freehand), lined-paper template, import images, export PNG/SVG from Pixi.
-
-Constraints: viewport-driven render list each frame; never iterate all entities in render loop.
-
-Verify: 5k entity benchmark ≥55 FPS; debug overlay shows culled count; export works.
-```
-
----
-
-### Phase 6 prompt
-
-```txt
-@workspace @docs
-
-Execute Phase 6: Persistence, Delta States, tldraw Migration.
-
-1. Define DvamoclesDocument schema v1 (snapshot + delta log).
-2. Update backend/main.py models and save/load; keep pathlib security.
-3. Add `backend/migrations/tldraw_to_dvamocles.py` for existing JSON in data/projects/.
-4. Update README (remove tldraw; document MIT stack).
-
-Verify: migrate sample project; save/reload round-trip; run.py works.
-```
-
----
-
-## 6. Testing Checkpoints Summary
-
-| Phase | Gate (must pass) |
-|-------|------------------|
-| 0 | Contracts compile; MVP unchanged |
-| 1 | No tldraw; Pixi pan/zoom 60 FPS; UI layout intact |
-| 2 | 1k entities; undo/redo; no per-entity React |
-| 3 | Tools/properties/save/minimap/align work on engine |
-| 4 | Drop-in plugin without core edits |
-| 5 | 5k entities performance; culling/LOD/batching; export |
-| 6 | Schema migration; backend round-trip; docs updated |
-
----
-
-## 7. Risk Register
-
-| Risk | Mitigation |
-|------|------------|
-| tldraw shape semantics lost in migration | Phase 6 migrator + manual mapping table for geo/arrow/line/draw |
-| Text editing complexity in Pixi | Phase 5+ — HTML overlay only for active editor, not per-shape React |
-| Yjs learning curve | Start read-only binding; add collaboration later |
-| Scope creep (AI/RAG early) | **Forbidden** until Phase 5 checkpoint green (per Master Guidelines §15) |
-| Unused shadcn UI breaks `tsc -b` | Purge in Phase 1b or exclude from `tsconfig` until needed |
-
----
-
-## 8. Human Review Checklist (Before Phase 1)
-
-- [ ] Approve PixiJS + pixi-viewport + Yjs as locked stack
-- [ ] Approve phased cutover (no big-bang single PR)
-- [ ] Confirm tldraw project files may be lossy-migrated
-- [ ] Confirm plugin folder convention (`frontend/src/plugins`, `backend/modules`)
-- [ ] Assign priority: performance (Phase 5) vs. early save/migrate (Phase 6 reorder?) if needed
-
-**After approval:** run **Phase 1 prompt** only. Do not skip phases.
-
----
-
-*Document generated for DVAMOCLES SWORD™ architectural migration. Revise version tag when schema or phase boundaries change.*
+*End of MIGRATION_PLAN v2.0-audit. Next mandatory action: **Phase 0 Pre-Flight** (§Phase 0).*

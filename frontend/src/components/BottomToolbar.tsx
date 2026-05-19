@@ -1,13 +1,15 @@
-import { useToolbarTools, type ToolbarActionId, type ToolId } from '../hooks/useToolbarTools';
+import { useToolbarTools, type ActiveToolId, type ToolbarActionId, type ToolId } from '../hooks/useToolbarTools';
 import { glassCard } from './ui/panel';
 import { cn } from './ui/utils';
 
-function isEntryActive(
-  activeTool: ToolId | ToolbarActionId,
-  entry: { kind: 'tool'; id: ToolId } | { kind: 'action'; id: ToolbarActionId },
-) {
-  if (entry.kind === 'tool') return activeTool === entry.id;
-  return false;
+type ToolbarEntryRef =
+  | { kind: 'tool'; id: ToolId }
+  | { kind: 'action'; id: ToolbarActionId }
+  | { kind: 'plugin-tool'; id: string };
+
+function isEntryActive(activeTool: ActiveToolId, entry: ToolbarEntryRef) {
+  if (entry.kind === 'action') return false;
+  return activeTool === entry.id;
 }
 
 export function BottomToolbar() {
@@ -21,22 +23,24 @@ export function BottomToolbar() {
         const Icon = entry.icon;
         const isActive = isEntryActive(activeTool, entry);
         const isAction = entry.kind === 'action';
-        const shortcut = entry.shortcut;
+        const isPlugin = entry.kind === 'plugin-tool';
+        const shortcut = entry.kind === 'tool' || entry.kind === 'plugin-tool' ? entry.shortcut : entry.shortcut;
         const digit = entry.kind === 'tool' ? entry.digit : undefined;
 
         return (
           <button
             key={entry.id}
             type="button"
-            onClick={() =>
-              activateTool(entry.kind === 'action' ? entry.id : entry.id)
-            }
+            onClick={() => activateTool(entry.id)}
             className={cn(
               'relative group w-10 h-10 rounded-lg flex items-center justify-center transition-all duration-200 shrink-0',
               isActive
-                ? 'bg-[#2F80ED] text-white shadow-[0_0_16px_rgba(47,128,237,0.35)]'
+                ? isPlugin
+                  ? 'bg-violet-600 text-white shadow-[0_0_16px_rgba(139,92,246,0.35)]'
+                  : 'bg-[#2F80ED] text-white shadow-[0_0_16px_rgba(47,128,237,0.35)]'
                 : 'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10',
               isAction && index > 0 && 'ml-0.5',
+              isPlugin && !isActive && 'border-violet-500/20',
             )}
             aria-label={shortcut ? `${entry.label} (${shortcut})` : entry.label}
           >
@@ -53,6 +57,9 @@ export function BottomToolbar() {
             >
               <div className="flex items-center gap-2">
                 <span className="text-white text-xs font-ui">{entry.label}</span>
+                {isPlugin ? (
+                  <span className="text-[10px] text-violet-300/80 uppercase tracking-wide">plugin</span>
+                ) : null}
                 {shortcut ? (
                   <kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/70 text-xs font-mono">
                     {shortcut}

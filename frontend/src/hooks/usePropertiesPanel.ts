@@ -1,154 +1,76 @@
-import { useCallback, useEffect, useState } from 'react';
-import {
-  DefaultColorStyle,
-  DefaultDashStyle,
-  DefaultFillStyle,
-  DefaultFontStyle,
-  DefaultSizeStyle,
-  useEditor,
-  type TLDefaultColorStyle,
-  type TLDefaultDashStyle,
-  type TLDefaultFillStyle,
-  type TLDefaultSizeStyle,
-} from 'tldraw';
-import { applyStyle } from '../lib/tldraw/applyStyle';
-import { applySketchyStyle, applyStraightStroke } from '../lib/tldraw/applySketchyStyle';
+import { useCallback } from 'react';
+import type { DvColorStyle, DvFillStyle, DvSizeStyle } from '../contracts/styles';
 import type { FillUiStyle } from '../components/properties/sections/FillStyleSection';
 import type { SloppinessUi } from '../components/properties/sections/SloppinessSection';
 import type { StrokeUiStyle } from '../components/properties/sections/StrokeStyleSection';
 import type { SizeUi } from '../components/properties/sections/StrokeWidthSection';
-
-function stripShapePrefix(id: string) {
-  return id.replace(/^shape:/, '');
-}
-
-function isSketchySloppiness(
-  dash: TLDefaultDashStyle | undefined,
-  font: string | undefined,
-): boolean {
-  return dash === 'draw' && font === 'draw';
-}
-
+import { useEngine } from '../engine/EngineContext';
 export function usePropertiesPanel() {
-  const editor = useEditor();
-  const [objectIdLabel, setObjectIdLabel] = useState('No Selection');
-  const [activeColor, setActiveColor] = useState<TLDefaultColorStyle>('black');
-  const [fillStyle, setFillStyle] = useState<FillUiStyle>('none');
-  const [sloppiness, setSloppiness] = useState<SloppinessUi>('straight');
-  const [strokeStyle, setStrokeStyle] = useState<StrokeUiStyle>('solid');
-  const [strokeWidth, setStrokeWidth] = useState<SizeUi>('m');
-  const [opacity, setOpacity] = useState([100]);
+  const engine = useEngine();
+  const { styleDefaults: s, selectedIds } = engine;
 
-  const syncFromEditor = useCallback(() => {
-    const selected = editor.getSelectedShapes();
+  const touchSelection = useCallback(() => {
+    if (selectedIds.size > 0) engine.applyStyleToSelection();
+  }, [engine, selectedIds]);
 
-    if (selected.length === 0) {
-      setObjectIdLabel('No Selection');
-    } else if (selected.length === 1) {
-      setObjectIdLabel(stripShapePrefix(selected[0].id));
-    } else {
-      setObjectIdLabel(`${selected.length} Objects Selected`);
-    }
+  const handleColorSelect = useCallback(
+    (color: DvColorStyle) => {
+      engine.setStrokeColor(color);
+      touchSelection();
+    },
+    [engine, touchSelection],
+  );
 
-    const colorStyle = editor.getSharedStyles().get(DefaultColorStyle);
-    if (colorStyle?.type === 'shared') {
-      setActiveColor(colorStyle.value);
-    }
-
-    const fill = editor.getSharedStyles().get(DefaultFillStyle);
-    const dash = editor.getSharedStyles().get(DefaultDashStyle);
-    const font = editor.getSharedStyles().get(DefaultFontStyle);
-
-    const fillValue = fill?.type === 'shared' ? fill.value : undefined;
-    const dashValue = dash?.type === 'shared' ? dash.value : undefined;
-    const fontValue = font?.type === 'shared' ? font.value : undefined;
-
-    if (
-      fillValue === 'none' ||
-      fillValue === 'semi' ||
-      fillValue === 'solid' ||
-      fillValue === 'pattern'
-    ) {
-      setFillStyle(fillValue);
-    }
-
-    if (isSketchySloppiness(dashValue, fontValue)) {
-      setSloppiness('sketchy');
-    } else {
-      setSloppiness('straight');
-      if (dashValue === 'solid' || dashValue === 'dashed' || dashValue === 'dotted') {
-        setStrokeStyle(dashValue);
+  const handleFillChange = useCallback(
+    (value: DvFillStyle) => {
+      if (value === 'none' || value === 'semi' || value === 'solid' || value === 'pattern') {
+        engine.setFillStyle(value);
+        touchSelection();
       }
-    }
+    },
+    [engine, touchSelection],
+  );
 
-    const sizeStyle = editor.getSharedStyles().get(DefaultSizeStyle);
-    if (sizeStyle?.type === 'shared') {
-      setStrokeWidth(sizeStyle.value);
-    }
+  const handleSloppinessChange = useCallback(
+    (value: SloppinessUi) => {
+      engine.setSloppiness(value);
+      touchSelection();
+    },
+    [engine, touchSelection],
+  );
 
-    const sharedOpacity = editor.getSharedOpacity();
-    if (sharedOpacity.type === 'shared') {
-      setOpacity([Math.round(sharedOpacity.value * 100)]);
-    }
-  }, [editor]);
+  const handleStrokeStyleChange = useCallback(
+    (value: StrokeUiStyle) => {
+      engine.setStrokeStyle(value);
+      touchSelection();
+    },
+    [engine, touchSelection],
+  );
 
-  useEffect(() => {
-    syncFromEditor();
-    const unlisten = editor.store.listen(syncFromEditor);
-    return () => unlisten();
-  }, [editor, syncFromEditor]);
+  const handleStrokeWidthChange = useCallback(
+    (value: DvSizeStyle) => {
+      engine.setStrokeWidth(value);
+      touchSelection();
+    },
+    [engine, touchSelection],
+  );
 
-  const handleColorSelect = (tldrawColor: TLDefaultColorStyle) => {
-    applyStyle(editor, DefaultColorStyle, tldrawColor);
-    setActiveColor(tldrawColor);
-  };
-
-  const handleFillChange = (value: TLDefaultFillStyle) => {
-    if (value === 'none' || value === 'semi' || value === 'solid' || value === 'pattern') {
-      setFillStyle(value);
-    }
-    applyStyle(editor, DefaultFillStyle, value);
-  };
-
-  const handleSloppinessChange = (value: SloppinessUi) => {
-    setSloppiness(value);
-    if (value === 'sketchy') {
-      applySketchyStyle(editor);
-      return;
-    }
-    applyStraightStroke(editor, strokeStyle);
-  };
-
-  const handleStrokeStyleChange = (value: TLDefaultDashStyle) => {
-    setStrokeStyle(value as StrokeUiStyle);
-    if (sloppiness === 'straight') {
-      applyStraightStroke(editor, value as StrokeUiStyle);
-    }
-  };
-
-  const handleStrokeWidthChange = (value: TLDefaultSizeStyle) => {
-    setStrokeWidth(value);
-    applyStyle(editor, DefaultSizeStyle, value);
-  };
-
-  const handleOpacityChange = (value: number[]) => {
-    const next = value[0] ?? 100;
-    setOpacity([next]);
-    const normalized = next / 100;
-    editor.setOpacityForNextShapes(normalized);
-    if (editor.getSelectedShapeIds().length > 0) {
-      editor.setOpacityForSelectedShapes(normalized);
-    }
-  };
+  const handleOpacityChange = useCallback(
+    (value: number[]) => {
+      engine.setOpacity(value[0] ?? 100);
+      touchSelection();
+    },
+    [engine, touchSelection],
+  );
 
   return {
-    objectIdLabel,
-    activeColor,
-    fillStyle,
-    sloppiness,
-    strokeStyle,
-    strokeWidth,
-    opacity,
+    objectIdLabel: engine.selectionLabel,
+    activeColor: s.strokeColor,
+    fillStyle: s.fillStyle as FillUiStyle,
+    sloppiness: s.sloppiness,
+    strokeStyle: s.strokeStyle,
+    strokeWidth: s.strokeWidth as SizeUi,
+    opacity: [s.opacity],
     handleColorSelect,
     handleFillChange,
     handleSloppinessChange,

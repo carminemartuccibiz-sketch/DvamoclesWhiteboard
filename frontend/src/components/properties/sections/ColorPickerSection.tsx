@@ -1,35 +1,28 @@
 import { Plus } from 'lucide-react';
-import type { TLDefaultColorStyle } from 'tldraw';
+import type { DvColorStyle } from '../../../contracts/styles';
 import { ColorPickerPopover } from '../../ColorPickerPopover';
 import { sectionLabelClass } from '../sectionStyles';
-import {
-  PRIMARY_TLDRAW_COLORS,
-  UI_HEX_BY_TLDRAW_COLOR,
-} from '../tldrawColors';
-
-export { UI_HEX_BY_TLDRAW_COLOR } from '../tldrawColors';
+import { PRIMARY_COLORS, UI_HEX_BY_COLOR } from '../enginePalette';
 
 interface ColorPickerSectionProps {
-  activeColor: TLDefaultColorStyle;
-  onColorSelect: (color: TLDefaultColorStyle) => void;
+  activeColor: DvColorStyle;
+  onColorSelect: (color: DvColorStyle) => void;
 }
 
 export function ColorPickerSection({ activeColor, onColorSelect }: ColorPickerSectionProps) {
-  const activeHex = UI_HEX_BY_TLDRAW_COLOR[activeColor] ?? '#1e1e1e';
-
   return (
     <div>
       <label className={sectionLabelClass}>Color</label>
       <div className="grid grid-cols-5 gap-2">
-        {PRIMARY_TLDRAW_COLORS.map((color) => (
+        {PRIMARY_COLORS.map((color) => (
           <button
-            key={color.tldraw}
+            key={color.id}
             type="button"
-            onClick={() => onColorSelect(color.tldraw)}
+            onClick={() => onColorSelect(color.id)}
             className={`
               w-full aspect-square rounded-xl transition-all duration-200
               ${
-                activeColor === color.tldraw
+                activeColor === color.id
                   ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-950 scale-95 shadow-lg'
                   : 'hover:scale-105 hover:ring-1 hover:ring-white/20'
               }
@@ -49,7 +42,7 @@ export function ColorPickerSection({ activeColor, onColorSelect }: ColorPickerSe
           </button>
         </ColorPickerPopover>
       </div>
-      <span className="sr-only">Selected: {activeHex}</span>
+      <span className="sr-only">Selected: {UI_HEX_BY_COLOR[activeColor] ?? activeColor}</span>
     </div>
   );
 }

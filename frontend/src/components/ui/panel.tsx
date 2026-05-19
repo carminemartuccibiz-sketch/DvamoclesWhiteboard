@@ -5,7 +5,7 @@ export const glassCard =
   'bg-[#0A0A0A]/80 backdrop-blur-[20px] border border-white/10 rounded-2xl shadow-2xl overflow-hidden';
 
 export const glassCardInset =
-  'bg-[#0A0A0A]/80 backdrop-blur-[20px] border border-white/10 rounded-xl shadow-2xl';
+  'bg-[#0A0A0A]/80 backdrop-blur-[20px] border border-white/10 rounded-xl shadow-2xl overflow-visible';
 
 export function FloatingCard({
   children,

@@ -1,5 +1,5 @@
 import * as ToggleGroup from '@radix-ui/react-toggle-group';
-import type { TLDefaultDashStyle } from 'tldraw';
+import { cn } from '../../ui/utils';
 import { sectionLabelClass, toggleGroupClass, toggleItemClass } from '../sectionStyles';
 
 export type StrokeUiStyle = 'solid' | 'dashed' | 'dotted';
@@ -12,32 +12,24 @@ const STROKE_OPTIONS: { value: StrokeUiStyle; label: string }[] = [
 
 interface StrokeStyleSectionProps {
   value: StrokeUiStyle;
-  disabled: boolean;
-  onChange: (value: TLDefaultDashStyle) => void;
+  disabled?: boolean;
+  onChange: (value: StrokeUiStyle) => void;
 }
 
-export function StrokeStyleSection({
-  value,
-  disabled,
-  onChange,
-}: StrokeStyleSectionProps) {
+export function StrokeStyleSection({ value, disabled, onChange }: StrokeStyleSectionProps) {
   return (
     <div>
-      <label className={sectionLabelClass}>STROKE STYLE</label>
+      <label className={sectionLabelClass}>Stroke</label>
       <ToggleGroup.Root
         type="single"
         value={value}
         disabled={disabled}
-        onValueChange={(next) => next && onChange(next as TLDefaultDashStyle)}
-        className={`${toggleGroupClass} grid-cols-3 ${disabled ? 'opacity-40 pointer-events-none' : ''}`}
+        onValueChange={(next) => next && onChange(next as StrokeUiStyle)}
+        className={cn(toggleGroupClass, disabled && 'opacity-50 pointer-events-none')}
       >
-        {STROKE_OPTIONS.map((option) => (
-          <ToggleGroup.Item
-            key={option.value}
-            value={option.value}
-            className={toggleItemClass}
-          >
-            {option.label}
+        {STROKE_OPTIONS.map((opt) => (
+          <ToggleGroup.Item key={opt.value} value={opt.value} className={toggleItemClass}>
+            {opt.label}
           </ToggleGroup.Item>
         ))}
       </ToggleGroup.Root>
